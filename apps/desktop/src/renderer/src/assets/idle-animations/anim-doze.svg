@@ -1,0 +1,108 @@
+<svg width="806" height="806" viewBox="224 209 806 806" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- 待機アニメーション: うとうと居眠り。基準は build/icon.svg。幾何パスは一切変更しない。
+       白目(白)のクリップを「まぶたのカバー範囲」としてゆっくり下げて閉眼に入る。
+       白目そのものは動かさず、まぶたとクリップだけを完全同期させて閉眼する。
+       まぶたは閉じるほど 34→29→22px と薄くなり、閉眼時に線へ収束する感触を出す。
+       クリップ境界は常にまぶた下端へ3px食い込ませ、復帰時も白目との隙間を作らない。 -->
+  <style>
+    .doze-body {
+      transform-box: fill-box;
+      transform-origin: 50% 100%;
+      animation: doze-body 6s ease-in-out infinite;
+    }
+    @keyframes doze-body {
+      0%, 12% { transform: translateY(0) scale(1, 1); }
+      58% { transform: translateY(28px) scale(1.014, 0.972); }
+      62% { transform: translateY(27px) scale(1.012, 0.974); }
+      68% { transform: translateY(-7px) scale(0.995, 1.012); }
+      76%, 100% { transform: translateY(0) scale(1, 1); }
+    }
+    .doze-sprout {
+      transform-box: fill-box;
+      transform-origin: 54% 100%;
+      animation: doze-sprout 6s ease-in-out infinite;
+    }
+    @keyframes doze-sprout {
+      0%, 12% { transform: rotate(0deg); }
+      58% { transform: rotate(-7deg); }
+      68% { transform: rotate(3.5deg); }
+      78%, 100% { transform: rotate(0deg); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .doze-body, .doze-sprout { animation: none; }
+    }
+  </style>
+
+  <defs>
+    <clipPath id="eye-frame-l"><rect x="0" y="31" width="80" height="56">
+      <animate attributeName="y" dur="6s" repeatCount="indefinite"
+        values="31;31;61;88;88;31;31"
+        keyTimes="0;0.12;0.50;0.60;0.62;0.68;1"
+        calcMode="spline"
+        keySplines="0 0 1 1;0.45 0 0.55 1;0.55 0 0.45 1;0.6 0 0.4 1;0.2 0 0.2 1;0 0 1 1"/>
+    </rect></clipPath>
+    <clipPath id="eye-frame-r"><rect x="0" y="31" width="80" height="56">
+      <animate attributeName="y" dur="6s" repeatCount="indefinite"
+        values="31;31;61;88;88;31;31"
+        keyTimes="0;0.12;0.50;0.60;0.62;0.68;1"
+        calcMode="spline"
+        keySplines="0 0 1 1;0.45 0 0.55 1;0.55 0 0.45 1;0.6 0 0.4 1;0.2 0 0.2 1;0 0 1 1"/>
+    </rect></clipPath>
+  </defs>
+
+  <g class="doze-body">
+    <g class="doze-sprout" id="sprout">
+      <path id="sprout-left" d="M710 346 C696 327 673 293 649 258 C641 246 645 232 657 225 C669 218 684 223 690 236 C708 276 718 313 719 338 C718 342 715 345 710 346Z" fill="#80DF37"/>
+      <path id="sprout-center" d="M716 346 C715 314 719 269 728 232 C731 217 744 208 758 211 C772 214 780 227 777 241 C769 283 751 321 730 346 C725 349 720 349 716 346Z" fill="#80DF37"/>
+      <path id="sprout-right" d="M724 347 C747 326 784 302 815 288 C828 282 842 287 848 300 C854 313 848 328 835 334 C798 352 758 357 731 354 C727 353 725 350 724 347Z" fill="#80DF37"/>
+    </g>
+    <g id="body">
+      <path id="body-shape" d="M479 341 C397 350 346 382 317 430 C289 477 289 548 289 625 V740 C289 831 294 893 328 938 C364 985 430 1007 523 1011 C575 1014 679 1014 731 1011 C824 1007 890 985 926 938 C960 893 965 831 965 740 V625 C965 548 965 477 937 430 C908 382 857 350 775 341 C687 331 567 331 479 341Z" fill="#75DD35"/>
+    </g>
+    <g id="eye-left" transform="translate(466 596)">
+      <path d="M0 31H80V43 C80 70 63 87 40 87 C17 87 0 70 0 43Z" fill="#FFFFFF"
+        clip-path="url(#eye-frame-l)"/>
+      <rect y="0" width="80" height="34" rx="11" fill="#0A5338">
+        <animate attributeName="y" dur="6s" repeatCount="indefinite"
+          values="0;0;35;69;69;0;0"
+          keyTimes="0;0.12;0.50;0.60;0.62;0.68;1"
+          calcMode="spline"
+          keySplines="0 0 1 1;0.45 0 0.55 1;0.55 0 0.45 1;0.6 0 0.4 1;0.2 0 0.2 1;0 0 1 1"/>
+        <animate attributeName="height" dur="6s" repeatCount="indefinite"
+          values="34;34;29;22;22;34;34"
+          keyTimes="0;0.12;0.50;0.60;0.62;0.68;1"
+          calcMode="spline"
+          keySplines="0 0 1 1;0.45 0 0.55 1;0.55 0 0.45 1;0.6 0 0.4 1;0.2 0 0.2 1;0 0 1 1"/>
+        <animate attributeName="rx" dur="6s" repeatCount="indefinite"
+          values="11;11;9;7;7;11;11"
+          keyTimes="0;0.12;0.50;0.60;0.62;0.68;1"
+          calcMode="spline"
+          keySplines="0 0 1 1;0.45 0 0.55 1;0.55 0 0.45 1;0.6 0 0.4 1;0.2 0 0.2 1;0 0 1 1"/>
+      </rect>
+    </g>
+    <g id="eye-right" transform="translate(701 596)">
+      <path d="M0 31H80V43 C80 70 63 87 40 87 C17 87 0 70 0 43Z" fill="#FFFFFF"
+        clip-path="url(#eye-frame-r)"/>
+      <rect y="0" width="80" height="34" rx="11" fill="#0A5338">
+        <animate attributeName="y" dur="6s" repeatCount="indefinite"
+          values="0;0;35;69;69;0;0"
+          keyTimes="0;0.12;0.50;0.60;0.62;0.68;1"
+          calcMode="spline"
+          keySplines="0 0 1 1;0.45 0 0.55 1;0.55 0 0.45 1;0.6 0 0.4 1;0.2 0 0.2 1;0 0 1 1"/>
+        <animate attributeName="height" dur="6s" repeatCount="indefinite"
+          values="34;34;29;22;22;34;34"
+          keyTimes="0;0.12;0.50;0.60;0.62;0.68;1"
+          calcMode="spline"
+          keySplines="0 0 1 1;0.45 0 0.55 1;0.55 0 0.45 1;0.6 0 0.4 1;0.2 0 0.2 1;0 0 1 1"/>
+        <animate attributeName="rx" dur="6s" repeatCount="indefinite"
+          values="11;11;9;7;7;11;11"
+          keyTimes="0;0.12;0.50;0.60;0.62;0.68;1"
+          calcMode="spline"
+          keySplines="0 0 1 1;0.45 0 0.55 1;0.55 0 0.45 1;0.6 0 0.4 1;0.2 0 0.2 1;0 0 1 1"/>
+      </rect>
+    </g>
+    <g id="mouth">
+      <rect x="606" y="696" width="36" height="19" rx="9.5" fill="#0A5338"/>
+    </g>
+  </g>
+</svg>

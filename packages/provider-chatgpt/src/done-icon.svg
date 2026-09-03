@@ -1,0 +1,114 @@
+<svg width="1254" height="1254" viewBox="0 0 1254 1254" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bodyGradient" x1="627" y1="336" x2="627" y2="1015" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#98EA3D"/>
+      <stop offset="0.48" stop-color="#7CDF32"/>
+      <stop offset="1" stop-color="#53CF39"/>
+    </linearGradient>
+    <radialGradient id="bodyGlow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(620 490) rotate(90) scale(430 500)">
+      <stop stop-color="#B7F65E" stop-opacity="0.36"/>
+      <stop offset="0.62" stop-color="#8DE83A" stop-opacity="0.08"/>
+      <stop offset="1" stop-color="#58D438" stop-opacity="0"/>
+    </radialGradient>
+    <clipPath id="mouthClip"><path d="M-30 -6 Q0 42 30 -6 Q0 8 -30 -6Z"/></clipPath>
+  </defs>
+  <style>
+    #bob { animation: hop 4s ease-in-out infinite; transform-origin: 627px 1010px; }
+    @keyframes hop {
+      0% { transform: translateY(0px) scale(1,1); }
+      6% { transform: translateY(0px) scale(1.06,0.9); }
+      22% { transform: translateY(-52px) scale(0.95,1.08); }
+      36% { transform: translateY(0px) scale(1.05,0.93); }
+      44% { transform: translateY(0px) scale(1,1); }
+      50% { transform: translateY(0px) scale(1.04,0.94); }
+      62% { transform: translateY(-26px) scale(0.97,1.05); }
+      72% { transform: translateY(0px) scale(1.03,0.96); }
+      82% { transform: translateY(-7px) scale(1,1); }
+      92%, 100% { transform: translateY(0px) scale(1,1); }
+    }
+    #shadow { animation: shDrop 4s ease-in-out infinite; transform-origin: 627px 1007px; }
+    @keyframes shDrop {
+      0% { transform: scale(1); opacity: 1; }
+      6% { transform: scale(0.95); opacity: 0.85; }
+      22% { transform: scale(0.76,0.7); opacity: 0.45; }
+      36% { transform: scale(0.97); opacity: 0.9; }
+      44% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(0.96); opacity: 0.85; }
+      62% { transform: scale(0.87); opacity: 0.65; }
+      72% { transform: scale(0.98); opacity: 0.92; }
+      82%, 100% { transform: scale(1); opacity: 1; }
+    }
+    #sprout { animation: wiggle 1.6s ease-in-out infinite; transform-origin: 722px 350px; }
+    @keyframes wiggle { 0%, 100% { transform: rotate(-9deg); } 50% { transform: rotate(9deg); } }
+    #glow { animation: glowBeat 2s ease-in-out infinite; }
+    @keyframes glowBeat { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
+    .eye { animation: eyeJoy 4s ease-in-out infinite; transform-box: fill-box; transform-origin: 50% 100%; }
+    @keyframes eyeJoy {
+      0%, 100% { transform: scale(1,1); }
+      6% { transform: scale(1.04,0.82); }
+      22% { transform: scale(1.06,1.14); }
+      36% { transform: scale(1,0.9); }
+      50% { transform: scale(1.03,0.85); }
+      62% { transform: scale(1.05,1.1); }
+      72% { transform: scale(1,0.92); }
+      82% { transform: scale(1,1); }
+    }
+    .mouth { animation: mouthYay 4s ease-in-out infinite; transform-box: fill-box; transform-origin: 50% 0%; }
+    @keyframes mouthYay {
+      0%, 100% { transform: scale(1); }
+      8% { transform: scale(1.15); }
+      22% { transform: scale(1.22); }
+      36% { transform: scale(1.02); }
+      50% { transform: scale(1.12); }
+      62% { transform: scale(1.18); }
+      72% { transform: scale(1); }
+    }
+    .blush { animation: blushBeat 4s ease-in-out infinite; }
+    @keyframes blushBeat {
+      0% { opacity: 0.5; }
+      22% { opacity: 0.85; }
+      44% { opacity: 0.5; }
+      62% { opacity: 0.8; }
+      72%, 100% { opacity: 0.5; }
+    }
+    .tw { opacity: 0; animation: twinkle 2.4s ease-in-out infinite; transform-box: fill-box; transform-origin: 50% 50%; }
+    .tw2 { animation-delay: 0.5s; }
+    .tw3 { animation-delay: 1s; }
+    .tw4 { animation-delay: 1.5s; }
+    .tw5 { animation-delay: 2s; }
+    @keyframes twinkle {
+      0% { opacity: 0; transform: scale(0) rotate(0deg); }
+      12% { opacity: 1; transform: scale(1.2) rotate(20deg); }
+      20% { opacity: 1; transform: scale(1) rotate(35deg); }
+      32%, 100% { opacity: 0; transform: scale(0.2) rotate(60deg); }
+    }
+    @media (prefers-reduced-motion: reduce) { * { animation: none !important; } .tw { opacity: 1; } }
+  </style>
+  <ellipse id="glow" cx="620" cy="490" rx="500" ry="430" fill="url(#bodyGlow)"/>
+  <g id="shadow">
+    <ellipse cx="627" cy="1007" rx="310" ry="24" fill="#74BD56" fill-opacity="0.055"/>
+    <ellipse cx="627" cy="1007" rx="255" ry="17" fill="#74BD56" fill-opacity="0.060"/>
+    <ellipse cx="627" cy="1007" rx="185" ry="10" fill="#74BD56" fill-opacity="0.045"/>
+  </g>
+  <g id="bob">
+    <g id="sprout">
+      <path id="sprout-left" d="M710 346 C696 327 673 293 649 258 C641 246 645 232 657 225 C669 218 684 223 690 236 C708 276 718 313 719 338 C718 342 715 345 710 346Z" fill="#80DF37"/>
+      <path id="sprout-center" d="M716 346 C715 314 719 269 728 232 C731 217 744 208 758 211 C772 214 780 227 777 241 C769 283 751 321 730 346 C725 349 720 349 716 346Z" fill="#80DF37"/>
+      <path id="sprout-right" d="M724 347 C747 326 784 302 815 288 C828 282 842 287 848 300 C854 313 848 328 835 334 C798 352 758 357 731 354 C727 353 725 350 724 347Z" fill="#80DF37"/>
+    </g>
+    <g id="body">
+      <path id="body-shape" d="M479 341 C397 350 346 382 317 430 C289 477 289 548 289 625 V740 C289 831 294 893 328 938 C364 985 430 1007 523 1011 C575 1014 679 1014 731 1011 C824 1007 890 985 926 938 C960 893 965 831 965 740 V625 C965 548 965 477 937 430 C908 382 857 350 775 341 C687 331 567 331 479 341Z" fill="#75DD35"/>
+      <path id="body-highlight" fill="none" d="M479 341 C397 350 346 382 317 430 C289 477 289 548 289 625 V740 C289 831 294 893 328 938 C364 985 430 1007 523 1011 C575 1014 679 1014 731 1011 C824 1007 890 985 926 938 C960 893 965 831 965 740 V625 C965 548 965 477 937 430 C908 382 857 350 775 341 C687 331 567 331 479 341Z"/>
+    </g>
+    <g transform="translate(466 596)"><g class="eye"><path d="M0 40 Q40 -4 80 40" fill="none" stroke="#0A5338" stroke-width="13" stroke-linecap="round"/></g></g>
+    <g transform="translate(701 596)"><g class="eye"><path d="M0 40 Q40 -4 80 40" fill="none" stroke="#0A5338" stroke-width="13" stroke-linecap="round"/></g></g>
+    <ellipse class="blush" transform="translate(494 664)" rx="19" ry="9" fill="#FF9BB5"/>
+    <ellipse class="blush" transform="translate(752 664)" rx="19" ry="9" fill="#FF9BB5"/>
+    <g transform="translate(624 700)"><g class="mouth"><path d="M-30 -6 Q0 42 30 -6 Q0 8 -30 -6Z" fill="#0A5338"/><g clip-path="url(#mouthClip)"><circle cy="22" r="9" fill="#FF97A8"/></g></g></g>
+  </g>
+  <g transform="translate(408 296)"><path class="tw" d="M0 -13L3.2 -3.2L13 0L3.2 3.2L0 13L-3.2 3.2L-13 0L-3.2 -3.2Z" fill="#FFD166"/></g>
+  <g transform="translate(852 266) scale(1.15)"><path class="tw tw2" d="M0 -13L3.2 -3.2L13 0L3.2 3.2L0 13L-3.2 3.2L-13 0L-3.2 -3.2Z" fill="#FFFFFF"/></g>
+  <g transform="translate(472 206) scale(0.8)"><path class="tw tw3" d="M0 -13L3.2 -3.2L13 0L3.2 3.2L0 13L-3.2 3.2L-13 0L-3.2 -3.2Z" fill="#B7F65E"/></g>
+  <g transform="translate(912 392) scale(0.9)"><path class="tw tw4" d="M0 -13L3.2 -3.2L13 0L3.2 3.2L0 13L-3.2 3.2L-13 0L-3.2 -3.2Z" fill="#FFD166"/></g>
+  <g transform="translate(366 420) scale(0.7)"><path class="tw tw5" d="M0 -13L3.2 -3.2L13 0L3.2 3.2L0 13L-3.2 3.2L-13 0L-3.2 -3.2Z" fill="#FFFFFF"/></g>
+</svg>

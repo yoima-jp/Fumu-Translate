@@ -1,0 +1,112 @@
+<svg width="808" height="808" viewBox="223 207 808 808" fill="none"
+xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bodyGradient" x1="627" y1="336" x2="627" y2="1015" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#98EA3D"/>
+      <stop offset="0.48" stop-color="#7CDF32"/>
+      <stop offset="1" stop-color="#53CF39"/>
+    </linearGradient>
+    <radialGradient id="bodyGlow" cx="0" cy="0" r="1"
+      gradientUnits="userSpaceOnUse"
+      gradientTransform="translate(620 490) rotate(90) scale(430 500)">
+      <stop stop-color="#B7F65E" stop-opacity="0.36"/>
+      <stop offset="0.62" stop-color="#8DE83A" stop-opacity="0.08"/>
+      <stop offset="1" stop-color="#58D438" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="sproutGradient" x1="715" y1="214" x2="715" y2="354" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#99E93C"/>
+      <stop offset="1" stop-color="#70D833"/>
+    </linearGradient>
+    <linearGradient id="darkGradient" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#12603F"/>
+      <stop offset="1" stop-color="#064D34"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Layer: sprout (3 independent editable leaves) -->
+  <g id="sprout">
+    <path id="sprout-left"
+      d="M710 346
+         C696 327 673 293 649 258
+         C641 246 645 232 657 225
+         C669 218 684 223 690 236
+         C708 276 718 313 719 338
+         C718 342 715 345 710 346Z"
+      fill="url(#sproutGradient)"/>
+    <path id="sprout-center"
+      d="M716 346
+         C715 314 719 269 728 232
+         C731 217 744 208 758 211
+         C772 214 780 227 777 241
+         C769 283 751 321 730 346
+         C725 349 720 349 716 346Z"
+      fill="url(#sproutGradient)"/>
+    <path id="sprout-right"
+      d="M724 347
+         C747 326 784 302 815 288
+         C828 282 842 287 848 300
+         C854 313 848 328 835 334
+         C798 352 758 357 731 354
+         C727 353 725 350 724 347Z"
+      fill="url(#sproutGradient)"/>
+  </g>
+
+  <!-- Layer: body -->
+  <g id="body">
+    <path id="body-shape"
+      d="M479 341
+         C397 350 346 382 317 430
+         C289 477 289 548 289 625
+         V740
+         C289 831 294 893 328 938
+         C364 985 430 1007 523 1011
+         C575 1014 679 1014 731 1011
+         C824 1007 890 985 926 938
+         C960 893 965 831 965 740
+         V625
+         C965 548 965 477 937 430
+         C908 382 857 350 775 341
+         C687 331 567 331 479 341Z"
+      fill="url(#bodyGradient)"/>
+    <path id="body-highlight"
+      d="M479 341
+         C397 350 346 382 317 430
+         C289 477 289 548 289 625
+         V740
+         C289 831 294 893 328 938
+         C364 985 430 1007 523 1011
+         C575 1014 679 1014 731 1011
+         C824 1007 890 985 926 938
+         C960 893 965 831 965 740
+         V625
+         C965 548 965 477 937 430
+         C908 382 857 350 775 341
+         C687 331 567 331 479 341Z"
+      fill="url(#bodyGlow)"/>
+  </g>
+
+  <!-- Layer: left eye -->
+  <g id="eye-left" transform="translate(466 596)">
+    <path id="eye-left-white"
+      d="M0 31H80V43
+         C80 70 63 87 40 87
+         C17 87 0 70 0 43Z"
+      fill="#FFFFFF"/>
+    <rect id="eye-left-lid" width="80" height="41" rx="11" fill="url(#darkGradient)"/>
+  </g>
+
+  <!-- Layer: right eye -->
+  <g id="eye-right" transform="translate(701 596)">
+    <path id="eye-right-white"
+      d="M0 31H80V43
+         C80 70 63 87 40 87
+         C17 87 0 70 0 43Z"
+      fill="#FFFFFF"/>
+    <rect id="eye-right-lid" width="80" height="41" rx="11" fill="url(#darkGradient)"/>
+  </g>
+
+  <!-- Layer: mouth -->
+  <g id="mouth">
+    <rect x="606" y="696" width="36" height="19" rx="9.5" fill="url(#darkGradient)"/>
+  </g>
+</svg>

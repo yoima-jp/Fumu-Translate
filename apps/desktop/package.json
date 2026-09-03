@@ -1,0 +1,120 @@
+{
+  "name": "@fumu/desktop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Fumu! desktop application",
+  "author": "Fumu! contributors",
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "pack": "npm run build && electron-builder --dir",
+    "dist": "npm run dist:unsigned",
+    "dist:unsigned": "npm run build && node ../../tools/build-unsigned.mjs"
+  },
+  "dependencies": {
+    "@fumu/agent-transport": "0.1.0",
+    "@fumu/i18n": "0.1.0",
+    "@fumu/llm-core": "0.1.0",
+    "@fumu/provider-anthropic": "0.1.0",
+    "@fumu/provider-chatgpt": "0.1.0",
+    "@fumu/provider-google": "0.1.0",
+    "@fumu/provider-openai-compatible": "0.1.0",
+    "@fumu/translation-core": "0.1.0",
+    "electron-log": "5.4.4",
+    "koffi": "^3.1.6",
+    "lucide-react": "1.37.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "selection-hook": "2.1.0",
+    "zod": "4.5.4"
+  },
+  "build": {
+    "appId": "app.fumu.desktop",
+    "productName": "Fumu!",
+    "asar": true,
+    "npmRebuild": false,
+    "electronFuses": {
+      "enableEmbeddedAsarIntegrityValidation": true,
+      "onlyLoadAppFromAsar": true
+    },
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "out/**/*",
+      "package.json",
+      "!**/*.map",
+      "!**/*.test.*",
+      "!**/*.spec.*",
+      "!**/__tests__/**/*",
+      "!**/test/**/*",
+      "!**/tests/**/*",
+      "!**/example/**/*",
+      "!**/examples/**/*",
+      "!**/node_modules/@fumu/**/*",
+      "!**/node_modules/react/**/*",
+      "!**/node_modules/react-dom/**/*",
+      "!**/node_modules/lucide-react/**/*",
+      "!**/node_modules/node-addon-api/**/*",
+      "!**/node_modules/scheduler/**/*",
+      "!**/node_modules/zod/src/**/*",
+      "!**/node_modules/koffi/doc/**/*",
+      "!**/node_modules/koffi/lib/**/*",
+      "!**/node_modules/koffi/vendor/**/*",
+      "!**/node_modules/koffi/src/koffi/CMakeLists.txt",
+      "!**/node_modules/koffi/src/koffi/src/**/*.asm",
+      "!**/node_modules/koffi/src/koffi/src/**/*.cc",
+      "!**/node_modules/koffi/src/koffi/src/**/*.def",
+      "!**/node_modules/koffi/src/koffi/src/**/*.hh",
+      "!**/node_modules/koffi/src/koffi/src/**/*.inc",
+      "!**/node_modules/koffi/src/koffi/src/**/*.S",
+      "!**/node_modules/koffi/*.md",
+      "!**/node_modules/koffi/cnoke.cjs",
+      "!**/node_modules/koffi/index.d.ts",
+      "!**/node_modules/@koromix/koffi-win32-x64/*.md",
+      "!**/node_modules/@koromix/koffi-win32-x64/**/*.lib",
+      "!**/node_modules/selection-hook/docs/**/*",
+      "!**/node_modules/selection-hook/examples/**/*",
+      "!**/node_modules/selection-hook/prebuilds/**/*",
+      "!**/node_modules/selection-hook/src/**/*",
+      "!**/node_modules/selection-hook/*.md",
+      "!**/node_modules/selection-hook/.clang-format-ignore",
+      "!**/node_modules/selection-hook/build/*.vcxproj*",
+      "!**/node_modules/selection-hook/build/Release/obj/**/*",
+      "!**/node_modules/selection-hook/build/Release/*.exp",
+      "!**/node_modules/selection-hook/build/Release/*.iobj",
+      "!**/node_modules/selection-hook/build/Release/*.ipdb",
+      "!**/node_modules/selection-hook/build/Release/*.lib"
+    ],
+    "extraResources": [
+      {
+        "from": "../../LICENSE",
+        "to": "LICENSE.txt"
+      },
+      {
+        "from": "../../THIRD_PARTY_NOTICES.md",
+        "to": "THIRD_PARTY_NOTICES.md"
+      }
+    ],
+    "win": {
+      "icon": "build/icon-windows.svg",
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "nsis": {
+      "artifactName": "Fumu-Setup-${version}-${arch}.${ext}",
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "portable": {
+      "artifactName": "Fumu-Portable-${version}-${arch}.${ext}"
+    }
+  }
+}

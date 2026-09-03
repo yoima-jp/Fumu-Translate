@@ -1,0 +1,16 @@
+{
+  "name": "@fumu/provider-chatgpt",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@fumu/http-sse": "0.1.0",
+    "@fumu/i18n": "0.1.0",
+    "@fumu/llm-core": "0.1.0"
+  }
+}

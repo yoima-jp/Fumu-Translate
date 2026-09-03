@@ -1,0 +1,297 @@
+/* オンボーディング用マスコット。幾何は apps/desktop/build/icon.svg の転写で、
+   クラス名は既存の fumu-* と衝突しないよう obm- プレフィックスに限定する。 */
+
+.obm-mascot {
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* パーツ単位の動きはすべてこの内側で完結させる。svg ルートには transform を置かない。
+   handoff 以降は親がルートを scale/translate するため、transform の所有権を競合させない。 */
+.obm-stage {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+}
+
+/* 若芽は根元（下端）を支点に揺らす。幾何上わずかに右寄りなので 54% に置く。 */
+.obm-sprout {
+  transform-box: fill-box;
+  transform-origin: 54% 100%;
+}
+
+/* 目は translate 属性で配置された <g> の内側のため、動かすのは白目 path のみ。
+   <g> に CSS transform を掛けると属性 transform が上書きされ、目が原点へ飛ぶ。 */
+.obm-eye-white {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+}
+
+.obm-mouth {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+}
+
+/* entering: 淡く浮かび上がる到着。座標系が大きい（1px ≈ 0.12% 表示幅）ため振幅は小さくする。 */
+.obm-mascot--entering .obm-stage {
+  animation: obm-enter 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes obm-enter {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* idle: 呼吸と若芽の揺れ。静止画と区別がつく最小限の振幅に抑える。 */
+.obm-mascot--idle .obm-stage {
+  animation: obm-breathe 3600ms ease-in-out infinite;
+}
+
+.obm-mascot--idle .obm-sprout {
+  animation: obm-sprout-sway 4200ms ease-in-out infinite;
+}
+
+@keyframes obm-breathe {
+  0%,
+  100% {
+    transform: scale(1, 1);
+  }
+  50% {
+    transform: scale(1.006, 0.994);
+  }
+}
+
+@keyframes obm-sprout-sway {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  30% {
+    transform: rotate(-2.4deg);
+  }
+  65% {
+    transform: rotate(1.8deg);
+  }
+}
+
+/* complete: 表情は置き換えず、軽く跳ねて白目を一瞬細くするだけの満足反応。 */
+.obm-mascot--complete .obm-stage {
+  animation: obm-pleased 620ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.obm-mascot--complete .obm-eye-white {
+  animation: obm-eye-squint 620ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes obm-pleased {
+  0%,
+  100% {
+    transform: translateY(0) scale(1, 1);
+  }
+  30% {
+    transform: translateY(-9px) scale(0.99, 1.02);
+  }
+  58% {
+    transform: translateY(2px) scale(1.008, 0.992);
+  }
+  78% {
+    transform: translateY(-1px) scale(0.998, 1.002);
+  }
+}
+
+@keyframes obm-eye-squint {
+  0%,
+  22%,
+  100% {
+    transform: scaleY(1);
+  }
+  42% {
+    transform: scaleY(0.42);
+  }
+  66% {
+    transform: scaleY(0.78);
+  }
+}
+
+/* departure: welcome開始時の射出表現。移動は親フレーム、ここでは潰しと若芽と目だけ。 */
+.obm-mascot--departure .obm-stage {
+  animation: obm-departure-squash 940ms cubic-bezier(0.26, 0, 0.24, 1) both;
+}
+
+.obm-mascot--departure .obm-sprout {
+  animation: obm-departure-sprout 940ms cubic-bezier(0.26, 0, 0.24, 1) both;
+}
+
+.obm-mascot--departure .obm-eye-white {
+  animation: obm-departure-eye 940ms cubic-bezier(0.26, 0, 0.24, 1) both;
+}
+
+/* 参考(anim-jump.svg)のリズムを圧縮: 沈み込み0-38%、射出38-52%、以降は親の画面外滞在と同期。
+   射出中は縦に伸び、若芽は慣性で後ろへ流される。座標系が大きい(1px≈0.12%表示幅)ため振幅は小さめ。 */
+@keyframes obm-departure-squash {
+  0% {
+    transform: scale(1, 1);
+  }
+  16% {
+    transform: scale(1.06, 0.92);
+  }
+  28% {
+    transform: scale(1.12, 0.84);
+  }
+  38% {
+    transform: scale(1.16, 0.78);
+  }
+  46% {
+    transform: scale(0.9, 1.18);
+  }
+  56%,
+  100% {
+    transform: scale(0.97, 1.04);
+  }
+}
+
+@keyframes obm-departure-sprout {
+  0%,
+  12% {
+    transform: rotate(0deg);
+  }
+  28% {
+    transform: rotate(-5deg);
+  }
+  38% {
+    transform: rotate(-13deg);
+  }
+  46% {
+    transform: rotate(11deg);
+  }
+  62%,
+  100% {
+    transform: rotate(6deg);
+  }
+}
+
+@keyframes obm-departure-eye {
+  0%,
+  24% {
+    transform: translateY(0);
+  }
+  38% {
+    transform: translateY(2px);
+  }
+  52%,
+  100% {
+    transform: translateY(0);
+  }
+}
+
+/* landing: complete到着時の落下と着地。移動は親フレーム、ここでは着地の潰れと反動だけ。
+   若芽は慣性で遅れて追従し、白目は一瞬だけ細くなる。 */
+.obm-mascot--landing .obm-stage {
+  animation: obm-landing-squash 900ms cubic-bezier(0.24, 0, 0.18, 1) both;
+}
+
+.obm-mascot--landing .obm-sprout {
+  animation: obm-landing-sprout 900ms cubic-bezier(0.24, 0, 0.18, 1) both;
+}
+
+.obm-mascot--landing .obm-eye-white {
+  animation: obm-landing-eye 900ms cubic-bezier(0.24, 0, 0.18, 1) both;
+}
+
+/* 着地0-40%(潰し→跳ね返り→静止)、以降は呼吸へ溶け込ませるため微小振幅で維持。 */
+@keyframes obm-landing-squash {
+  0%,
+  30% {
+    transform: scale(1, 1);
+  }
+  40% {
+    transform: scale(1.14, 0.8);
+  }
+  58% {
+    transform: scale(0.95, 1.09);
+  }
+  76% {
+    transform: scale(1.02, 0.98);
+  }
+  90%,
+  100% {
+    transform: scale(1, 1);
+  }
+}
+
+@keyframes obm-landing-sprout {
+  0%,
+  30% {
+    transform: rotate(0deg);
+  }
+  40% {
+    transform: rotate(13deg);
+  }
+  58% {
+    transform: rotate(-9deg);
+  }
+  78% {
+    transform: rotate(4deg);
+  }
+  92%,
+  100% {
+    transform: rotate(0deg);
+  }
+}
+
+@keyframes obm-landing-eye {
+  0%,
+  30% {
+    transform: translateY(0);
+  }
+  40% {
+    transform: translateY(5px);
+  }
+  58% {
+    transform: translateY(-1px);
+  }
+  76%,
+  100% {
+    transform: translateY(0);
+  }
+}
+
+/* handoff: 静止状態で親の transition に委ねる。アニメーションを残すと
+   親の transform と合成されて座標が暴れるため、ここでは何も適用しない。 */
+
+@media (prefers-reduced-motion: reduce) {
+  .obm-mascot--entering .obm-stage {
+    /* 移動と拡縮は省くが、出現自体は消さない。全フェーズで見た目が欠けないようにする。 */
+    animation: obm-enter-fade 260ms ease-out both;
+  }
+
+  .obm-mascot--idle .obm-stage,
+  .obm-mascot--idle .obm-sprout,
+  .obm-mascot--departure .obm-stage,
+  .obm-mascot--departure .obm-sprout,
+  .obm-mascot--departure .obm-eye-white,
+  .obm-mascot--landing .obm-stage,
+  .obm-mascot--landing .obm-sprout,
+  .obm-mascot--landing .obm-eye-white,
+  .obm-mascot--complete .obm-stage,
+  .obm-mascot--complete .obm-eye-white {
+    animation: none;
+  }
+}
+
+@keyframes obm-enter-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}

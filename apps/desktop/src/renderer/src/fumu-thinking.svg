@@ -1,0 +1,199 @@
+<svg width="848" height="824" viewBox="276 193 848 824" fill="none" xmlns="http://www.w3.org/2000/svg">
+
+  <style>
+    /* ===== ループ構成（周期をずらして単調さを回避） =====
+       浮き沈み: 3.2s / 視線・瞬き: 4.8s / 思考ドット: 2.4s */
+
+    /* 体の浮き沈み + 微傾き */
+    #bob {
+      animation: bob 3.2s ease-in-out infinite;
+      transform-origin: 627px 1010px;
+    }
+    @keyframes bob {
+      0%, 100% { transform: translateY(0px) rotate(0deg); }
+      50%      { transform: translateY(-14px) rotate(-1.3deg); }
+    }
+
+    /* 芽の揺れ */
+    #sprout {
+      animation: sway 3.2s ease-in-out infinite;
+      transform-origin: 722px 350px;
+    }
+    @keyframes sway {
+      0%, 100% { transform: rotate(-4deg); }
+      50%      { transform: rotate(5deg); }
+    }
+
+    /* 視線: 正面 → 左上で考え中 → 右上で考え中 → 正面 */
+    .look { animation: look 4.8s ease-in-out infinite; }
+    @keyframes look {
+      0%, 8%    { transform: translate(0px, 0px); }
+      20%, 36%  { transform: translate(-16px, -12px); }
+      50%, 66%  { transform: translate(16px, -12px); }
+      80%, 100% { transform: translate(0px, 0px); }
+    }
+
+    /* 瞬き（視線の切り替え中に一度パチッ） */
+    .blink {
+      animation: blink 4.8s linear infinite;
+      transform-box: fill-box;
+      transform-origin: 50% 15%;
+    }
+    @keyframes blink {
+      0%, 42%   { transform: scaleY(1); }
+      45%       { transform: scaleY(0.06); }
+      48%, 100% { transform: scaleY(1); }
+    }
+
+    /* 考え中はまぶたが下がる（細め） */
+    .lid {
+      animation: squint 4.8s ease-in-out infinite;
+      transform-box: fill-box;
+      transform-origin: 50% 0%;
+    }
+    @keyframes squint {
+      0%, 10%   { transform: scaleY(1); }
+      22%, 64%  { transform: scaleY(1.35); }
+      80%, 100% { transform: scaleY(1); }
+    }
+
+    /* 口は視線に少し追随して小さく結ぶ */
+    .mouth {
+      animation: mouthThink 4.8s ease-in-out infinite;
+      transform-box: fill-box;
+      transform-origin: 50% 50%;
+    }
+    @keyframes mouthThink {
+      0%, 8%    { transform: translate(0px, 0px) scale(1); }
+      20%, 36%  { transform: translate(-9px, -3px) scale(0.85, 0.75); }
+      50%, 66%  { transform: translate(9px, -3px) scale(0.85, 0.75); }
+      80%, 100% { transform: translate(0px, 0px) scale(1); }
+    }
+
+    /* 思考ドット（…がぽこぽこ浮かぶ） */
+    .dot {
+      opacity: 0;
+      animation: dotPop 2.4s ease-in-out infinite;
+      transform-box: fill-box;
+      transform-origin: 50% 50%;
+    }
+    .d2 { animation-delay: 0.3s; }
+    .d3 { animation-delay: 0.6s; }
+    @keyframes dotPop {
+      0%        { opacity: 0; transform: translateY(10px) scale(0.5); }
+      18%       { opacity: 1; transform: translateY(0px) scale(1); }
+      60%       { opacity: 1; transform: translateY(-6px) scale(1); }
+      85%, 100% { opacity: 0; transform: translateY(-16px) scale(0.85); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      #bob, #sprout, .look, .blink, .lid, .mouth, .dot { animation: none; }
+      .dot { opacity: 1; }
+    }
+  </style>
+
+  <!-- Layer: thinking dots -->
+  <g id="dots">
+    <circle class="dot d1" cx="930" cy="322" r="15" fill="#75DD35"/>
+    <circle class="dot d2" cx="1012" cy="283" r="19" fill="#75DD35"/>
+    <circle class="dot d3" cx="1098" cy="236" r="23" fill="#75DD35"/>
+  </g>
+
+  <!-- Layer: bob (sprout + body + face) -->
+  <g id="bob">
+    <!-- Layer: sprout (3 independent editable leaves) -->
+    <g id="sprout">
+      <path id="sprout-left"
+        d="M710 346
+           C696 327 673 293 649 258
+           C641 246 645 232 657 225
+           C669 218 684 223 690 236
+           C708 276 718 313 719 338
+           C718 342 715 345 710 346Z"
+        fill="#80DF37"/>
+      <path id="sprout-center"
+        d="M716 346
+           C715 314 719 269 728 232
+           C731 217 744 208 758 211
+           C772 214 780 227 777 241
+           C769 283 751 321 730 346
+           C725 349 720 349 716 346Z"
+        fill="#80DF37"/>
+      <path id="sprout-right"
+        d="M724 347
+           C747 326 784 302 815 288
+           C828 282 842 287 848 300
+           C854 313 848 328 835 334
+           C798 352 758 357 731 354
+           C727 353 725 350 724 347Z"
+        fill="#80DF37"/>
+    </g>
+
+    <!-- Layer: body -->
+    <g id="body">
+      <path id="body-shape"
+        d="M479 341
+           C397 350 346 382 317 430
+           C289 477 289 548 289 625
+           V740
+           C289 831 294 893 328 938
+           C364 985 430 1007 523 1011
+           C575 1014 679 1014 731 1011
+           C824 1007 890 985 926 938
+           C960 893 965 831 965 740
+           V625
+           C965 548 965 477 937 430
+           C908 382 857 350 775 341
+           C687 331 567 331 479 341Z"
+        fill="#75DD35"/>
+      <path id="body-highlight"
+        d="M479 341
+           C397 350 346 382 317 430
+           C289 477 289 548 289 625
+           V740
+           C289 831 294 893 328 938
+           C364 985 430 1007 523 1011
+           C575 1014 679 1014 731 1011
+           C824 1007 890 985 926 938
+           C960 893 965 831 965 740
+           V625
+           C965 548 965 477 937 430
+           C908 382 857 350 775 341
+           C687 331 567 331 479 341Z"
+        fill="none"/>
+    </g>
+
+    <!-- Layer: left eye -->
+    <g id="eye-left" transform="translate(466 596)">
+      <g class="look">
+        <g class="blink">
+          <path id="eye-left-white"
+            d="M0 31H80V43
+               C80 70 63 87 40 87
+               C17 87 0 70 0 43Z"
+            fill="#FFFFFF"/>
+          <rect id="eye-left-lid" class="lid" width="80" height="41" rx="11" fill="#0A5338"/>
+        </g>
+      </g>
+    </g>
+
+    <!-- Layer: right eye -->
+    <g id="eye-right" transform="translate(701 596)">
+      <g class="look">
+        <g class="blink">
+          <path id="eye-right-white"
+            d="M0 31H80V43
+               C80 70 63 87 40 87
+               C17 87 0 70 0 43Z"
+            fill="#FFFFFF"/>
+          <rect id="eye-right-lid" class="lid" width="80" height="41" rx="11" fill="#0A5338"/>
+        </g>
+      </g>
+    </g>
+
+    <!-- Layer: mouth -->
+    <g class="mouth">
+      <rect x="606" y="696" width="36" height="19" rx="9.5" fill="#0A5338"/>
+    </g>
+  </g>
+</svg>

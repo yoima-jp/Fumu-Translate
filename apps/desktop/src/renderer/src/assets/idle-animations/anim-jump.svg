@@ -1,0 +1,121 @@
+<svg width="806" height="806" viewBox="224 209 806 806" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- 画面外への移動は表示側のビューポート基準アニメーションが担当する。
+       このSVGは潰れ・伸び・表情だけを同期し、画像自身の境界でキャラが切れないようにする。 -->
+  <style>
+    .jump-stage {
+      will-change: transform;
+    }
+
+    .jump-squash {
+      transform-box: fill-box;
+      transform-origin: 50% 100%;
+      animation: jump-squash 3.7s linear infinite;
+      will-change: transform;
+    }
+    @keyframes jump-squash {
+      0%, 18% { transform: scale(1, 1); }
+      24% { transform: scale(1.03, 0.97); }
+      31% { transform: scale(1.09, 0.87); }
+      38% { transform: scale(1.15, 0.75); }
+      42% { transform: scale(1.18, 0.69); }
+
+      45% { transform: scale(0.92, 1.16); }
+      49% { transform: scale(0.87, 1.24); }
+      57% { transform: scale(0.98, 1.04); }
+      64% { transform: scale(1, 1); }
+
+      67% { transform: scale(0.97, 1.07); }
+      70% { transform: scale(0.93, 1.12); }
+      72% { transform: scale(0.89, 1.18); }
+
+      73.5% { transform: scale(1.21, 0.68); }
+      76.5% { transform: scale(0.94, 1.10); }
+      80% { transform: scale(1.03, 0.96); }
+      84%, 100% { transform: scale(1, 1); }
+    }
+
+    .jump-sprout {
+      transform-box: fill-box;
+      transform-origin: 54% 100%;
+      animation: jump-sprout 3.7s linear infinite;
+      will-change: transform;
+    }
+    @keyframes jump-sprout {
+      0%, 22%, 100% { transform: rotate(0deg); }
+      31% { transform: rotate(-4deg); }
+      38% { transform: rotate(-10deg); }
+      42% { transform: rotate(-16deg); }
+      45% { transform: rotate(13deg); }
+      50% { transform: rotate(7deg); }
+      63% { transform: rotate(-2deg); }
+      72% { transform: rotate(-17deg); }
+      73.5% { transform: rotate(14deg); }
+      77.5% { transform: rotate(-9deg); }
+      82% { transform: rotate(4deg); }
+      87% { transform: rotate(0deg); }
+    }
+
+    .jump-eye-inner {
+      animation: jump-eye 3.7s linear infinite;
+      will-change: transform;
+    }
+    @keyframes jump-eye {
+      0%, 28%, 100% { transform: translateY(0); }
+      38% { transform: translateY(1px); }
+      42% { transform: translateY(2px); }
+      50% { transform: translateY(0); }
+      73.5% { transform: translateY(8px); }
+      77.5% { transform: translateY(1px); }
+      81% { transform: translateY(0); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .jump-squash, .jump-sprout, .jump-eye-inner { animation: none; }
+    }
+  </style>
+
+  <defs>
+    <clipPath id="jump-left-clip"><rect x="0" y="31" width="80" height="56">
+      <animate attributeName="y" dur="3.7s" repeatCount="indefinite"
+        values="31;31;36;42;31;31;87;58;31;31"
+        keyTimes="0;0.28;0.38;0.42;0.50;0.72;0.735;0.765;0.81;1"
+        calcMode="spline"
+        keySplines="0 0 1 1;0.2 0 0.4 1;0.2 0 0.4 1;0.25 0 0.4 1;0 0 1 1;0.16 0 0.28 1;0.18 0 0.3 1;0.2 0.7 0.3 1;0 0 1 1"/>
+    </rect></clipPath>
+    <clipPath id="jump-right-clip"><rect x="0" y="31" width="80" height="56">
+      <animate attributeName="y" dur="3.7s" repeatCount="indefinite"
+        values="31;31;36;42;31;31;87;58;31;31"
+        keyTimes="0;0.28;0.38;0.42;0.50;0.72;0.735;0.765;0.81;1"
+        calcMode="spline"
+        keySplines="0 0 1 1;0.2 0 0.4 1;0.2 0 0.4 1;0.25 0 0.4 1;0 0 1 1;0.16 0 0.28 1;0.18 0 0.3 1;0.2 0.7 0.3 1;0 0 1 1"/>
+    </rect></clipPath>
+  </defs>
+
+  <g class="jump-stage">
+    <g class="jump-squash">
+      <g class="jump-sprout" id="sprout">
+        <path id="sprout-left" d="M710 346 C696 327 673 293 649 258 C641 246 645 232 657 225 C669 218 684 223 690 236 C708 276 718 313 719 338 C718 342 715 345 710 346Z" fill="#80DF37"/>
+        <path id="sprout-center" d="M716 346 C715 314 719 269 728 232 C731 217 744 208 758 211 C772 214 780 227 777 241 C769 283 751 321 730 346 C725 349 720 349 716 346Z" fill="#80DF37"/>
+        <path id="sprout-right" d="M724 347 C747 326 784 302 815 288 C828 282 842 287 848 300 C854 313 848 328 835 334 C798 352 758 357 731 354 C727 353 725 350 724 347Z" fill="#80DF37"/>
+      </g>
+      <g id="body">
+        <path id="body-shape" d="M479 341 C397 350 346 382 317 430 C289 477 289 548 289 625 V740 C289 831 294 893 328 938 C364 985 430 1007 523 1011 C575 1014 679 1014 731 1011 C824 1007 890 985 926 938 C960 893 965 831 965 740 V625 C965 548 965 477 937 430 C908 382 857 350 775 341 C687 331 567 331 479 341Z" fill="#75DD35"/>
+      </g>
+      <g id="eye-left" transform="translate(466 596)">
+        <g class="jump-eye-inner">
+          <path d="M0 31H80V43 C80 70 63 87 40 87 C17 87 0 70 0 43Z" fill="#FFFFFF" clip-path="url(#jump-left-clip)"/>
+          <rect width="80" height="41" rx="11" fill="#0A5338"/>
+        </g>
+      </g>
+      <g id="eye-right" transform="translate(701 596)">
+        <g class="jump-eye-inner">
+          <path d="M0 31H80V43 C80 70 63 87 40 87 C17 87 0 70 0 43Z" fill="#FFFFFF" clip-path="url(#jump-right-clip)"/>
+          <rect width="80" height="41" rx="11" fill="#0A5338"/>
+        </g>
+      </g>
+      <g id="mouth">
+        <rect x="606" y="696" width="36" height="19" rx="9.5" fill="#0A5338"/>
+      </g>
+    </g>
+  </g>
+</svg>

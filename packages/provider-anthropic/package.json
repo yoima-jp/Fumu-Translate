@@ -1,0 +1,17 @@
+{
+  "name": "@fumu/provider-anthropic",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@fumu/http-sse": "0.1.0",
+    "@fumu/llm-core": "0.1.0"
+  }
+}

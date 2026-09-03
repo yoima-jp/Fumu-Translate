@@ -1,0 +1,52 @@
+{
+  "name": "fumu",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Fumu! is a Windows-first, selection-aware personal translation app.",
+  "license": "MIT",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "postinstall": "patch-package && node tools/rebuild-selection-hook.mjs && install-electron",
+    "dev": "npm --workspace @fumu/desktop run dev",
+    "dev:mock-provider": "node tools/mock-openai-provider.mjs",
+    "build": "npm --workspace @fumu/desktop run build",
+    "licenses": "node tools/generate-third-party-notices.mjs",
+    "licenses:check": "node tools/generate-third-party-notices.mjs --check",
+    "pack": "npm run licenses && npm --workspace @fumu/desktop run pack",
+    "dist": "npm run dist:unsigned",
+    "dist:unsigned": "npm run licenses && npm --workspace @fumu/desktop run dist:unsigned",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "vitest run",
+    "test:e2e:native-selection": "node tools/windows-native-selection-e2e.mjs",
+    "test:watch": "vitest",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "@electron/fuses": "1.8.0",
+    "@playwright/test": "1.62.1",
+    "@types/node": "24.10.1",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "5.2.0",
+    "electron": "44.0.0",
+    "electron-builder": "26.15.3",
+    "electron-vite": "5.0.0",
+    "koffi": "3.1.6",
+    "node-gyp": "12.4.0",
+    "patch-package": "8.0.1",
+    "prettier": "3.9.6",
+    "selection-hook": "2.1.0",
+    "typescript": "7.0.2",
+    "vite": "7.3.6",
+    "vitest": "4.1.11"
+  },
+  "engines": {
+    "node": ">=24.0.0",
+    "npm": ">=11.0.0"
+  },
+  "packageManager": "npm@11.6.2"
+}

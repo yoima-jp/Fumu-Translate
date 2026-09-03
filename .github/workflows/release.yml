@@ -1,0 +1,51 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - name: Verify tag and package version
+        shell: pwsh
+        run: |
+          $tagVersion = $env:GITHUB_REF_NAME.TrimStart("v")
+          $packageVersion = node -p "require('./apps/desktop/package.json').version"
+          if ($packageVersion -ne $tagVersion) {
+            throw "Tag version $tagVersion does not match package version $packageVersion."
+          }
+      - run: npm ci
+      - run: npm run licenses:check
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run dist:unsigned
+      - name: Publish installers
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $assets = Get-ChildItem -LiteralPath apps/desktop/dist -Filter "*.exe" |
+            Select-Object -ExpandProperty FullName
+          if ($assets.Count -eq 0) {
+            throw "No installer artifacts were generated."
+          }
+          if (gh release view $env:GITHUB_REF_NAME) {
+            gh release upload $env:GITHUB_REF_NAME $assets --clobber
+          } else {
+            gh release create $env:GITHUB_REF_NAME $assets `
+              --title "Fumu! $env:GITHUB_REF_NAME" `
+              --generate-notes `
+              --verify-tag
+          }
