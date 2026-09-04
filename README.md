@@ -56,6 +56,12 @@ Because the current installer is not code-signed, Windows may display a security
 
 ---
 
+## Inspiration
+
+Fumu! is inspired by [nani.now](https://nani.now/). It is an independent project and is not affiliated with nani.now.
+
+---
+
 ## Development
 
 ### Requirements
