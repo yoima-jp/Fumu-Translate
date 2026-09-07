@@ -54,6 +54,8 @@ Enable multiple models and try another one when the first fails.
 Download `Fumu-Setup-1.0.0-x64.exe` from the [latest release](../../releases/latest) and run it.
 Because the current installer is not code-signed, Windows may display a security warning.
 
+Opening Settings checks GitHub Releases for updates. Select Update and restart to download the installer in the app, verify its SHA-256, quit, install, and restart. Approve any Windows permission prompt. Updating a portable copy switches to the installed edition.
+
 ---
 
 ## Inspiration

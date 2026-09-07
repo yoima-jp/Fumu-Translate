@@ -175,6 +175,8 @@ export interface PopupResizeRequest {
 }
 
 export interface FumuDesktopApi {
+  checkUpdates(): Promise<import('./update-contracts').UpdateStatus>;
+  downloadUpdate(): Promise<boolean>;
   getStatus(): Promise<DesktopStatus>;
   triggerClipboard(): Promise<void>;
   restartApp(): Promise<void>;

@@ -1,4 +1,6 @@
 export const IPC_CHANNELS = {
+  appCheckUpdates: 'app:check-updates',
+  appDownloadUpdate: 'app:download-update',
   appGetStatus: 'app:get-status',
   appStatusChanged: 'app:status-changed',
   appTriggerClipboard: 'app:trigger-clipboard',

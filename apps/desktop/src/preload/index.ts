@@ -17,6 +17,8 @@ import { IPC_CHANNELS } from '../shared/ipc-channels';
 import type { AppliedTranslationInstruction } from '../shared/applied-translation-instructions-contract';
 
 const api: FumuDesktopApi = {
+  checkUpdates: () => ipcRenderer.invoke(IPC_CHANNELS.appCheckUpdates),
+  downloadUpdate: () => ipcRenderer.invoke(IPC_CHANNELS.appDownloadUpdate),
   getStatus: () => ipcRenderer.invoke(IPC_CHANNELS.appGetStatus),
   triggerClipboard: () => ipcRenderer.invoke(IPC_CHANNELS.appTriggerClipboard),
   restartApp: () => ipcRenderer.invoke(IPC_CHANNELS.appRestart),

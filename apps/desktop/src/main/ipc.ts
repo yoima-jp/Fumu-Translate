@@ -1,6 +1,9 @@
 import { join } from 'node:path';
 import { app, ipcMain, shell, type IpcMainInvokeEvent } from 'electron';
 import { z } from 'zod';
+import log from 'electron-log/main';
+import { downloadInstaller, launchInstaller } from './updates/install-update';
+import { ReleaseUpdates } from './updates/release-updates';
 import {
   MAX_CONVERSATION_CONTEXT_TEXT_CODE_POINTS,
   MAX_CONVERSATION_CONTEXT_TURNS,
@@ -121,6 +124,28 @@ export function registerIpcHandlers(
 
   const mainOnly = (event: IpcMainInvokeEvent): RendererKind =>
     assertTrustedSender(event, ['main']);
+  const updates = new ReleaseUpdates({
+    version: app.getVersion(),
+    architecture: process.arch,
+    portable: Boolean(process.env.PORTABLE_EXECUTABLE_FILE),
+    fetch,
+    install: async (asset) => {
+      if (!app.isPackaged || process.platform !== 'win32')
+        throw new Error('Updates require a packaged Windows app');
+      const installer = await downloadInstaller(asset, app.getPath('temp'), fetch);
+      await launchInstaller(installer, process.env.PORTABLE_EXECUTABLE_FILE ?? process.execPath);
+      app.quit();
+    },
+    warn: (message, error) => log.warn(message, error),
+  });
+  ipcMain.handle(IPC_CHANNELS.appCheckUpdates, (event) => {
+    mainOnly(event);
+    return updates.check();
+  });
+  ipcMain.handle(IPC_CHANNELS.appDownloadUpdate, (event) => {
+    mainOnly(event);
+    return updates.download();
+  });
   const popupOnly = (event: IpcMainInvokeEvent): RendererKind =>
     assertTrustedSender(event, ['popup']);
   const eitherWindow = (event: IpcMainInvokeEvent): RendererKind =>
@@ -301,6 +326,8 @@ export function registerIpcHandlers(
   });
 
   return () => {
+    ipcMain.removeHandler(IPC_CHANNELS.appCheckUpdates);
+    ipcMain.removeHandler(IPC_CHANNELS.appDownloadUpdate);
     ipcMain.removeHandler(IPC_CHANNELS.appGetStatus);
     ipcMain.removeHandler(IPC_CHANNELS.appTriggerClipboard);
     ipcMain.removeHandler(IPC_CHANNELS.appRestart);

@@ -35,6 +35,7 @@ import { targetAfterNativeLanguageChange } from './language-target';
 import { recordDeveloperModeTap } from './developer-mode-taps';
 import { displayAccelerator } from './shortcut-display';
 import desktopPackage from '../../../../package.json';
+import type { UpdateStatus } from '../../../shared/update-contracts';
 import thirdPartyNotices from '../../../../../../THIRD_PARTY_NOTICES.md?raw';
 
 interface SoftSelectOption<T extends string> {
@@ -596,6 +597,71 @@ function GeneralSettings({
   );
 }
 
+function UpdateSettings(): React.JSX.Element {
+  const { t } = useI18n();
+  const [status, setStatus] = useState<UpdateStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [downloadMessage, setDownloadMessage] = useState<'opened' | 'error' | null>(null);
+  const check = async (): Promise<void> => {
+    setBusy(true);
+    setDownloadMessage(null);
+    try {
+      setStatus(await window.fumu.checkUpdates());
+    } catch {
+      setStatus({ phase: 'error' });
+    } finally {
+      setBusy(false);
+    }
+  };
+  const download = async (): Promise<void> => {
+    setBusy(true);
+    try {
+      setDownloadMessage((await window.fumu.downloadUpdate()) ? 'opened' : 'error');
+    } catch {
+      setDownloadMessage('error');
+    } finally {
+      setBusy(false);
+    }
+  };
+  useEffect(() => {
+    void check();
+  }, []);
+  return (
+    <section className="settings-section nani-settings-card">
+      <div className="settings-line">
+        <span>
+          <strong>{t('updates.title')}</strong>
+          <small role="status" aria-live="polite">
+            {busy
+              ? t(status?.phase === 'available' ? 'updates.installing' : 'updates.busy')
+              : status?.phase === 'available'
+                ? t('updates.available', { version: status.version })
+                : status
+                  ? t(`updates.${status.phase}`)
+                  : ''}
+          </small>
+        </span>
+        <button
+          className="settings-manage-button"
+          type="button"
+          disabled={busy}
+          onClick={() => void (status?.phase === 'available' ? download() : check())}
+        >
+          {t(status?.phase === 'available' ? 'updates.download' : 'updates.check')}
+        </button>
+      </div>
+      {status?.phase === 'available' && (
+        <p>{t(status.portable ? 'updates.portableInstall' : 'updates.installHint')}</p>
+      )}
+      {downloadMessage && (
+        <p role="status">
+          {t(downloadMessage === 'error' ? 'updates.downloadError' : 'updates.opened')}
+        </p>
+      )}
+    </section>
+  );
+}
+
 function SettingsFooter({
   settings,
   onOpenThirdPartyNotices,
@@ -1054,6 +1120,7 @@ export function SettingsView({
             </button>
           </div>
         </section>
+        <UpdateSettings />
         <SettingsFooter
           settings={settings}
           onOpenThirdPartyNotices={() => setThirdPartyNoticesOpen(true)}
