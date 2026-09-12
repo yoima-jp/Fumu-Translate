@@ -299,6 +299,12 @@ export class PopupWindowManager {
     this.#showInteractive(window);
   }
 
+  showErrorInMain(requestId: string, message: string): void {
+    this.#activeSurface = 'main';
+    this.#mainState = { phase: 'error', requestId, message };
+    this.#sendMainState();
+  }
+
   resize(request: PopupResizeRequest): void {
     if (!Number.isFinite(request.width) || !Number.isFinite(request.height)) {
       return;

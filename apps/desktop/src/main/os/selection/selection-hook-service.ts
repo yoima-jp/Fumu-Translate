@@ -1,5 +1,5 @@
 import log from 'electron-log/main';
-import type { KeyboardEventData, MouseEventData, TextSelectionData } from 'selection-hook';
+import type { MouseEventData, TextSelectionData } from 'selection-hook';
 import type {
   Point,
   ResolvedSelection,
@@ -9,7 +9,6 @@ import type {
 import type { SelectionWorkerMessage, SelectionWorkerPort } from './selection-worker-protocol';
 import { createSelectionProcessFactory } from './selection-process-port';
 
-const SYSTEM_MODIFIERS = new Set(['Alt', 'Control', 'Meta', 'Shift']);
 // Keep the Main Process free of the native addon. These are stable public
 // selection-hook protocol constants; only the killable child loads the DLL.
 const INVALID_COORDINATE = -99_999;
@@ -21,7 +20,6 @@ const POSITION_LEVEL_SELECTION_FULL = 3;
 export type MouseDownListener = (point: Point) => void;
 
 export interface SelectionHookServiceOptions {
-  readonly modifierReleaseTimeoutMs?: number;
   readonly queryTimeoutMs?: number;
   readonly hungWorkerRetireMs?: number;
   readonly startupTimeoutMs?: number;
@@ -52,7 +50,6 @@ interface PendingStartup {
 
 export class SelectionHookService {
   readonly #logger = log.scope('selection');
-  readonly #modifierReleaseTimeoutMs: number;
   readonly #queryTimeoutMs: number;
   readonly #hungWorkerRetireMs: number;
   readonly #startupTimeoutMs: number;
@@ -61,7 +58,6 @@ export class SelectionHookService {
   readonly #now: () => number;
   readonly #workerFactory: () => SelectionWorkerPort;
   readonly #mouseDownListeners = new Set<MouseDownListener>();
-  readonly #pressedModifiers = new Set<string>();
   readonly #pendingQueries = new Map<number, PendingQuery>();
   readonly #timedOutQueryRetireTimers = new Map<number, NodeJS.Timeout>();
   readonly #retiredWorkerTerminations = new Set<Promise<void>>();
@@ -78,8 +74,9 @@ export class SelectionHookService {
   #stopPromise: Promise<void> | null = null;
 
   constructor(options: SelectionHookServiceOptions = {}) {
-    this.#modifierReleaseTimeoutMs = options.modifierReleaseTimeoutMs ?? 250;
-    this.#queryTimeoutMs = options.queryTimeoutMs ?? 1_000;
+    // UIA初回接続とコピー前の物理キー解放待ちを許容する。
+    // 永久停止は子プロセスの退役で回復し、Mainのイベントループは塞がない。
+    this.#queryTimeoutMs = options.queryTimeoutMs ?? 5_000;
     this.#hungWorkerRetireMs = options.hungWorkerRetireMs ?? 5_000;
     this.#startupTimeoutMs = options.startupTimeoutMs ?? 5_000;
     this.#workerTerminationTimeoutMs = options.workerTerminationTimeoutMs ?? 1_500;
@@ -126,13 +123,8 @@ export class SelectionHookService {
       return null;
     }
 
-    if (!(await this.#waitForModifierRelease())) {
-      // Native fallback must never release a physical Alt/Shift key on the user's
-      // behalf. If the hotkey chord remains held, yield to clipboard/manual fallback.
-      this.#logger.debug('Selection query skipped while a modifier remained pressed');
-      return null;
-    }
-
+    // UIA/MSAAにはキー解放は不要。コピーの注入時だけNative側で実際の
+    // キー状態を確認するため、IPCイベントの遅延・欠落でも取得を中断しない。
     let data: TextSelectionData | null;
     try {
       data = await this.#requestSelection();
@@ -143,7 +135,11 @@ export class SelectionHookService {
       return null;
     }
 
-    return data === null ? null : this.#toResolvedSelection(data);
+    if (data === null) {
+      this.#logger.info('Selection query returned no text');
+      return null;
+    }
+    return this.#toResolvedSelection(data);
   }
 
   onMouseDown(listener: MouseDownListener): () => void {
@@ -174,7 +170,6 @@ export class SelectionHookService {
     this.#running = false;
     this.#workerResponsive = false;
     this.#selectionQuery = null;
-    this.#pressedModifiers.clear();
     this.#failPendingQueries();
     this.#clearRetireTimers();
 
@@ -299,10 +294,7 @@ export class SelectionHookService {
         this.#handleMouseDown(message.data);
         return;
       case 'key-down':
-        this.#handleKeyDown(message.data);
-        return;
       case 'key-up':
-        this.#handleKeyUp(message.data);
         return;
       case 'selection-result': {
         const retireTimer = this.#timedOutQueryRetireTimers.get(message.requestId);
@@ -508,33 +500,6 @@ export class SelectionHookService {
     for (const listener of this.#mouseDownListeners) {
       listener(point);
     }
-  }
-
-  #handleKeyDown(data: KeyboardEventData): void {
-    if (SYSTEM_MODIFIERS.has(data.uniKey)) {
-      this.#pressedModifiers.add(data.uniKey);
-      return;
-    }
-
-    // 非modifier keyはpressed modifier集合を変えない。
-    // 本文は常に明示queryするため、event cacheの無効化処理は持たない。
-  }
-
-  #handleKeyUp(data: KeyboardEventData): void {
-    this.#pressedModifiers.delete(data.uniKey);
-  }
-
-  async #waitForModifierRelease(): Promise<boolean> {
-    const startedAt = this.#now();
-    while (
-      this.#pressedModifiers.size > 0 &&
-      this.#now() - startedAt < this.#modifierReleaseTimeoutMs
-    ) {
-      await new Promise<void>((resolve) => {
-        setTimeout(resolve, 10);
-      });
-    }
-    return this.#pressedModifiers.size === 0;
   }
 
   #toResolvedSelection(data: TextSelectionData): ResolvedSelection {

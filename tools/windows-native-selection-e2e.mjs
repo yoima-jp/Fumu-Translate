@@ -92,8 +92,8 @@ async function waitForProvider() {
   });
 }
 
-async function waitForFixture(title = windowTitle) {
-  const deadline = Date.now() + 10_000;
+async function waitForFixture(title = windowTitle, timeoutMs = 10_000) {
+  const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const handle = findWindow(null, title);
     if (validHandle(handle)) return handle;
@@ -304,7 +304,7 @@ try {
   await sendKey(VK_J, [VK_CONTROL, VK_SHIFT]);
   // Locale文言はプロダクト仕様として変更される。Native Selectionの回帰検証が
   // 翻訳文言の変更で停止しないよう、表示テキストではなく安定した識別子を使う。
-  await popup.getByTestId('popup-source-input').waitFor({ state: 'visible', timeout: 5_000 });
+  await popup.getByRole('alert').waitFor({ state: 'visible', timeout: 8_000 });
   await popup.evaluate(() => window.fumu.closePopup());
   const replacementSelectionProcess = await waitForSelectionProcessReplacement(
     application.process().pid,
@@ -350,6 +350,79 @@ try {
     );
   }
 
+  // Exercise UIA without usable rectangles, stale sibling selection rejection,
+  // unverified MSAA rejection, and a hotkey held beyond the former JavaScript cutoff.
+  for (const mode of ['LargeText', 'FocusContainer', 'CopyOnly', 'ObjectSelection']) {
+    await popup.evaluate(() => window.fumu.closePopup());
+    const title = 'Fumu Selection ' + mode + ' ' + Date.now();
+    oversizedFixture = spawn(
+      'pwsh.exe',
+      [
+        '-NoProfile',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-File',
+        'tools/windows/caret-fixture.ps1',
+        '-WindowTitle',
+        title,
+        '-Text',
+        selectedText,
+        '-SelectAll',
+        ...(mode === 'ObjectSelection' ? ['-CopyOnly', '-ObjectSelection'] : ['-' + mode]),
+      ],
+      { cwd: root, stdio: 'ignore', windowsHide: true },
+    );
+    const handle = await waitForFixture(title);
+    runClipboardFixture('Clear');
+    await focusFixture(handle);
+    const modeResult = popup.evaluate(
+      () =>
+        new Promise((resolve, reject) => {
+          const timer = setTimeout(() => {
+            unsubscribe();
+            reject(new Error('No selection state'));
+          }, 10000);
+          const unsubscribe = window.fumu.onPopupState((state) => {
+            if (state.phase === 'selection' || state.phase === 'error') {
+              clearTimeout(timer);
+              unsubscribe();
+              resolve(state.phase === 'selection' ? state.selection.method : 'error');
+            }
+          });
+        }),
+    );
+    keybdEvent(VK_CONTROL, 0, 0, 0);
+    keybdEvent(VK_SHIFT, 0, 0, 0);
+    try {
+      await sendKey(VK_J);
+      await delay(500);
+    } finally {
+      keybdEvent(VK_SHIFT, 0, KEY_UP, 0);
+      keybdEvent(VK_CONTROL, 0, KEY_UP, 0);
+    }
+    const actualMethod = await modeResult;
+    const expectedMethods =
+      mode === 'ObjectSelection' || mode === 'FocusContainer'
+        ? ['error']
+        : mode === 'CopyOnly'
+          ? ['clipboard-copy']
+          : ['uia'];
+    if (!expectedMethods.includes(actualMethod)) {
+      throw new Error(
+        mode + ': expected ' + expectedMethods.join(' or ') + ', got ' + actualMethod,
+      );
+    }
+    if (actualMethod !== 'error') {
+      await popup.getByText(selectedText, { exact: true }).waitFor({ timeout: 10_000 });
+      await waitForCompletedTranslation(popup);
+    } else if (mode === 'ObjectSelection' || mode === 'CopyOnly') {
+      const copied = await application.evaluate(async ({ clipboard }) => clipboard.readText());
+      if (copied) throw new Error(mode + ' caused an unverified synthetic copy');
+    }
+    await terminateProcessTree(oversizedFixture);
+    oversizedFixture = null;
+  }
+
   // A malicious accessibility provider can expose a document-sized selection. The
   // native boundary must reject it without terminating or wedging the worker, and a
   // subsequent ordinary UIA query must still succeed.
@@ -372,11 +445,13 @@ try {
     ],
     { cwd: root, stdio: 'ignore', windowsHide: true },
   );
-  const oversizedFixtureHandle = await waitForFixture(oversizedWindowTitle);
+  // Creating and selecting a 200k-character WinForms control can exceed the
+  // ordinary fixture deadline on loaded Windows CI hosts.
+  const oversizedFixtureHandle = await waitForFixture(oversizedWindowTitle, 30_000);
   await focusFixture(oversizedFixtureHandle);
   setCursorPos(2, 2);
   await sendKey(VK_J, [VK_CONTROL, VK_SHIFT]);
-  await popup.getByTestId('popup-source-input').waitFor({ state: 'visible', timeout: 10_000 });
+  await popup.getByRole('alert').waitFor({ state: 'visible', timeout: 10_000 });
   if (application.process().exitCode !== null) {
     throw new Error('Fumu exited while rejecting an oversized UIA selection.');
   }
@@ -400,7 +475,10 @@ try {
   concurrentWriter = await startConcurrentClipboardWriter(concurrentExternalValue);
   await focusFixture(fixtureHandle);
   await sendKey(VK_J, [VK_CONTROL, VK_SHIFT]);
-  await popup.getByText(concurrentExternalValue, { exact: true }).waitFor({ timeout: 10_000 });
+  await popup.getByRole('alert').waitFor({ state: 'visible', timeout: 10_000 });
+  if (await popup.getByText(concurrentExternalValue, { exact: true }).count()) {
+    throw new Error('An unrelated clipboard write was translated.');
+  }
   const writerExitCode =
     concurrentWriter.exitCode ??
     (await new Promise((resolveExit, rejectExit) => {
@@ -422,7 +500,7 @@ try {
   fixtureClipboardSet = true;
   await focusFixture(fixtureHandle);
   await sendKey(VK_J, [VK_CONTROL, VK_SHIFT]);
-  await popup.getByTestId('popup-source-input').waitFor({ state: 'visible', timeout: 10_000 });
+  await popup.getByRole('alert').waitFor({ state: 'visible', timeout: 10_000 });
   const clipboardCheck = runClipboardFixture('Check');
 
   runClipboardFixture('Clear');
@@ -460,6 +538,11 @@ try {
     status: true,
     hotkey: true,
     foregroundSelection: true,
+    selectionWithoutUsableCoordinates: true,
+    staleSiblingSelectionRejected: true,
+    heldHotkeySelection: true,
+    documentRoleClipboardFallback: true,
+    objectSelectionCopyBlocked: true,
     selectionMethod,
     foregroundProgramName: selectionIdentity.programName,
     hungSelectionProcessReplaced: Number(replacementSelectionProcess.ProcessId) > 0,

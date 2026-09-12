@@ -12,7 +12,7 @@ function release(version = '1.10.0', portable = false) {
         name,
         size: 123,
         digest: 'sha256:' + 'a'.repeat(64),
-        browser_download_url: `https://github.com/yoima-jp/Fumu/releases/download/v${version}/${name}`,
+        browser_download_url: `https://github.com/yoima-jp/Fumu-Translate/releases/download/v${version}/${name}`,
       },
     ],
   };

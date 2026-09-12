@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { UpdateAsset } from './install-update';
 import type { UpdateStatus } from '../../shared/update-contracts';
 
-const repositoryUrl = 'https://github.com/yoima-jp/Fumu';
+const repositoryUrl = 'https://github.com/yoima-jp/Fumu-Translate';
 const releaseSchema = z.object({
   tag_name: z.string(),
   draft: z.boolean(),

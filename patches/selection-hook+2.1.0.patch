@@ -1,13 +1,14 @@
 diff --git a/node_modules/selection-hook/src/windows/core/engine.cc b/node_modules/selection-hook/src/windows/core/engine.cc
-index 1bae811..f1322c8 100644
+index 1bae811..79fc089 100644
 --- a/node_modules/selection-hook/src/windows/core/engine.cc
 +++ b/node_modules/selection-hook/src/windows/core/engine.cc
-@@ -16,661 +16,722 @@
+@@ -16,661 +16,620 @@
  #include <cassert>
  #include <cmath>
  #include <mutex>
 +#include <new>
  #include <vector>
++#include <wrl/client.h>
  
  #include "../lib/clipboard.h"
  #include "../lib/string_pool.h"
@@ -16,11 +17,11 @@ index 1bae811..f1322c8 100644
 -#pragma comment(lib, "Oleacc.lib")  // For IAccessible.
 +#pragma comment(lib, "Oleacc.lib") // For IAccessible.
  
- // UI Automation constant missing from some older Windows SDKs.
- #ifndef UIA_IsSelectionActivePropertyId
- #define UIA_IsSelectionActivePropertyId 30034
- #endif
- 
+-// UI Automation constant missing from some older Windows SDKs.
+-#ifndef UIA_IsSelectionActivePropertyId
+-#define UIA_IsSelectionActivePropertyId 30034
+-#endif
+-
 -namespace
 -{
 -// Clipboard fallback is a process-wide transaction: backup, clear, synthesize copy,
@@ -80,6 +81,33 @@ index 1bae811..f1322c8 100644
 -            cleaned += text[i];
 -            continue;
 -        }
+-
+-        // Drop one CRLF, LF, or CR immediately before the marker.
+-        if (!cleaned.empty() && cleaned.back() == L'\n')
+-        {
+-            cleaned.pop_back();
+-            if (!cleaned.empty() && cleaned.back() == L'\r')
+-                cleaned.pop_back();
+-        }
+-        else if (!cleaned.empty() && cleaned.back() == L'\r')
+-        {
+-            cleaned.pop_back();
+-        }
+-
+-        // Skip one CRLF, LF, or CR immediately after the marker.
+-        if (i + 1 < text.size() && text[i + 1] == L'\r')
+-        {
+-            i++;
+-            if (i + 1 < text.size() && text[i + 1] == L'\n')
+-                i++;
+-        }
+-        else if (i + 1 < text.size() && text[i + 1] == L'\n')
+-        {
+-            i++;
+-        }
+-    }
+-
+-    text.swap(cleaned);
 +void RemoveObjectReplacementChars(std::wstring &text) {
 +  if (text.empty())
 +    return;
@@ -95,18 +123,7 @@ index 1bae811..f1322c8 100644
 +      cleaned += text[i];
 +      continue;
 +    }
- 
--        // Drop one CRLF, LF, or CR immediately before the marker.
--        if (!cleaned.empty() && cleaned.back() == L'\n')
--        {
--            cleaned.pop_back();
--            if (!cleaned.empty() && cleaned.back() == L'\r')
--                cleaned.pop_back();
--        }
--        else if (!cleaned.empty() && cleaned.back() == L'\r')
--        {
--            cleaned.pop_back();
--        }
++
 +    // Drop one CRLF, LF, or CR immediately before the marker.
 +    if (!cleaned.empty() && cleaned.back() == L'\n') {
 +      cleaned.pop_back();
@@ -115,18 +132,7 @@ index 1bae811..f1322c8 100644
 +    } else if (!cleaned.empty() && cleaned.back() == L'\r') {
 +      cleaned.pop_back();
 +    }
- 
--        // Skip one CRLF, LF, or CR immediately after the marker.
--        if (i + 1 < text.size() && text[i + 1] == L'\r')
--        {
--            i++;
--            if (i + 1 < text.size() && text[i + 1] == L'\n')
--                i++;
--        }
--        else if (i + 1 < text.size() && text[i + 1] == L'\n')
--        {
--            i++;
--        }
++
 +    // Skip one CRLF, LF, or CR immediately after the marker.
 +    if (i + 1 < text.size() && text[i + 1] == L'\r') {
 +      i++;
@@ -134,10 +140,9 @@ index 1bae811..f1322c8 100644
 +        i++;
 +    } else if (i + 1 < text.size() && text[i + 1] == L'\n') {
 +      i++;
-     }
++    }
 +  }
- 
--    text.swap(cleaned);
++
 +  text.swap(cleaned);
  }
 -}  // namespace
@@ -217,6 +222,25 @@ index 1bae811..f1322c8 100644
 -        if ((config.globalFilterMode == FilterMode::IncludeList && !isIn) ||
 -            (config.globalFilterMode == FilterMode::ExcludeList && isIn))
 -            return false;
+-    }
+-
+-    bool hasNonTextSelection = false;
+-    // Prefer UIA for modern applications.
+-    if (!IsStopping() && automation_)
+-    {
+-        SetStage(RetrievalStage::UIAutomation);
+-        const TextRetrievalResult uiaResult = GetTextViaUIAutomation(hwnd, selectionInfo);
+-        if (uiaResult == TextRetrievalResult::TextFound)
+-        {
+-            selectionInfo.method = SelectionMethod::UIA;
+-            SetStage(RetrievalStage::Complete);
+-            if (endingClipboardSequence)
+-                *endingClipboardSequence = clipboardSequence_;
+-            if (endingControlType)
+-                *endingControlType = controlType_;
+-            return true;
+-        }
+-        hasNonTextSelection = uiaResult == TextRetrievalResult::NonTextSelection;
 +  config_ = &config;
 +  stopToken_ = stopToken;
 +  stage_ = stage;
@@ -257,25 +281,7 @@ index 1bae811..f1322c8 100644
 +      if (endingControlType)
 +        *endingControlType = controlType_;
 +      return true;
-     }
--
--    bool hasNonTextSelection = false;
--    // Prefer UIA for modern applications.
--    if (!IsStopping() && automation_)
--    {
--        SetStage(RetrievalStage::UIAutomation);
--        const TextRetrievalResult uiaResult = GetTextViaUIAutomation(hwnd, selectionInfo);
--        if (uiaResult == TextRetrievalResult::TextFound)
--        {
--            selectionInfo.method = SelectionMethod::UIA;
--            SetStage(RetrievalStage::Complete);
--            if (endingClipboardSequence)
--                *endingClipboardSequence = clipboardSequence_;
--            if (endingControlType)
--                *endingControlType = controlType_;
--            return true;
--        }
--        hasNonTextSelection = uiaResult == TextRetrievalResult::NonTextSelection;
++    }
 +    if (uiaResult == TextRetrievalResult::OversizedSelection) {
 +      // This is an intentional terminal result. Clipboard fallback would copy
 +      // the same known-oversized data and would also mutate another
@@ -287,25 +293,7 @@ index 1bae811..f1322c8 100644
 +      if (endingControlType)
 +        *endingControlType = controlType_;
 +      return false;
-     }
--
--    // Fall back to MSAA/IAccessible for legacy applications and compatibility providers.
--    if (!IsStopping())
--    {
--        SetStage(RetrievalStage::Accessible);
--        const TextRetrievalResult accessibleResult = GetTextViaAccessible(hwnd, selectionInfo);
--        if (accessibleResult == TextRetrievalResult::TextFound)
--        {
--            selectionInfo.method = SelectionMethod::Accessible;
--            SetStage(RetrievalStage::Complete);
--            if (endingClipboardSequence)
--                *endingClipboardSequence = clipboardSequence_;
--            if (endingControlType)
--                *endingControlType = controlType_;
--            return true;
--        }
--        if (accessibleResult == TextRetrievalResult::NonTextSelection)
--            hasNonTextSelection = true;
++    }
 +    hasNonTextSelection = uiaResult == TextRetrievalResult::NonTextSelection;
 +  }
 +
@@ -325,6 +313,36 @@ index 1bae811..f1322c8 100644
 +      return true;
      }
 -
+-    // Fall back to MSAA/IAccessible for legacy applications and compatibility providers.
+-    if (!IsStopping())
+-    {
+-        SetStage(RetrievalStage::Accessible);
+-        const TextRetrievalResult accessibleResult = GetTextViaAccessible(hwnd, selectionInfo);
+-        if (accessibleResult == TextRetrievalResult::TextFound)
+-        {
+-            selectionInfo.method = SelectionMethod::Accessible;
+-            SetStage(RetrievalStage::Complete);
+-            if (endingClipboardSequence)
+-                *endingClipboardSequence = clipboardSequence_;
+-            if (endingControlType)
+-                *endingControlType = controlType_;
+-            return true;
+-        }
+-        if (accessibleResult == TextRetrievalResult::NonTextSelection)
+-            hasNonTextSelection = true;
++    if (accessibleResult == TextRetrievalResult::OversizedSelection) {
++      selectionInfo.text.clear();
++      SetStage(RetrievalStage::Complete);
++      if (endingClipboardSequence)
++        *endingClipboardSequence = clipboardSequence_;
++      if (endingControlType)
++        *endingControlType = controlType_;
++      return false;
+     }
++    if (accessibleResult == TextRetrievalResult::NonTextSelection)
++      hasNonTextSelection = true;
++  }
+ 
 -    // Never synthesize a copy shortcut for an object selection. Apart from changing the
 -    // clipboard, copying selected UI objects can invoke application-specific actions.
 -    if (hasNonTextSelection || IsStopping())
@@ -341,19 +359,7 @@ index 1bae811..f1322c8 100644
 -        if (endingControlType)
 -            *endingControlType = controlType_;
 -        return true;
-+    if (accessibleResult == TextRetrievalResult::OversizedSelection) {
-+      selectionInfo.text.clear();
-+      SetStage(RetrievalStage::Complete);
-+      if (endingClipboardSequence)
-+        *endingClipboardSequence = clipboardSequence_;
-+      if (endingControlType)
-+        *endingControlType = controlType_;
-+      return false;
-     }
-+    if (accessibleResult == TextRetrievalResult::NonTextSelection)
-+      hasNonTextSelection = true;
-+  }
-+
+-    }
 +  // Never synthesize a copy shortcut for an object selection. Apart from
 +  // changing the clipboard, copying selected UI objects can invoke
 +  // application-specific actions.
@@ -409,7 +415,7 @@ index 1bae811..f1322c8 100644
 +  const UINT length = SysStringLen(text);
 +  if (length > maxSelectionUtf16Units) {
 +    oversizedSelection_ = true;
-+    return false;
+     return false;
 +  }
 +
 +  try {
@@ -422,7 +428,7 @@ index 1bae811..f1322c8 100644
 +    // worker remains alive and, critically, does not retry through Clipboard.
 +    target.clear();
 +    oversizedSelection_ = true;
-     return false;
++    return false;
 +  }
 +  return !target.empty();
  }
@@ -432,14 +438,7 @@ index 1bae811..f1322c8 100644
 -{
 -    if (!config_ || !config_->clipboardEnabled)
 -        return false;
-+/** Case-insensitive substring match against the normalized UTF-8 program list.
-+ */
-+bool SelectionEngine::IsInFilterList(
-+    const std::wstring &programName,
-+    const std::vector<std::string> &filterList) const {
-+  if (filterList.empty())
-+    return false;
- 
+-
 -    bool result = false;
 -    switch (config_->clipboardFilterMode)
 -    {
@@ -455,17 +454,13 @@ index 1bae811..f1322c8 100644
 -    }
 -    if (!result)
 -        return false;
-+  // Lists are stored as lowercase UTF-8 by the JS configuration path.
-+  std::wstring lowerProgramName = programName;
-+  std::transform(lowerProgramName.begin(), lowerProgramName.end(),
-+                 lowerProgramName.begin(), towlower);
-+  const std::string utf8ProgramName = StringPool::WideToUtf8(lowerProgramName);
-+  for (const auto &filterItem : filterList) {
-+    if (utf8ProgramName.find(filterItem) != std::string::npos)
-+      return true;
-+  }
-+  return false;
-+}
++/** Case-insensitive substring match against the normalized UTF-8 program list.
++ */
++bool SelectionEngine::IsInFilterList(
++    const std::wstring &programName,
++    const std::vector<std::string> &filterList) const {
++  if (filterList.empty())
++    return false;
  
 -    // A direct getCurrentSelection() call has no reliable mouse cursor context, so the
 -    // cursor heuristic applies only to automatic mouse-driven retrieval.
@@ -490,56 +485,18 @@ index 1bae811..f1322c8 100644
 -                controlType_ != UIA_TextControlTypeId)
 -                return false;
 -        }
-+/** Apply clipboard enablement, program filters, cursor heuristics, and UIA
-+ * exceptions. */
-+bool SelectionEngine::ShouldProcessViaClipboard(
-+    const std::wstring &programName) const {
-+  if (!config_ || !config_->clipboardEnabled)
-+    return false;
-+
-+  bool result = false;
-+  switch (config_->clipboardFilterMode) {
-+  case FilterMode::Default:
-+    result = true;
-+    break;
-+  case FilterMode::IncludeList:
-+    result = IsInFilterList(programName, config_->clipboardFilterList);
-+    break;
-+  case FilterMode::ExcludeList:
-+    result = !IsInFilterList(programName, config_->clipboardFilterList);
-+    break;
-+  }
-+  if (!result)
-+    return false;
-+
-+  // A direct getCurrentSelection() call has no reliable mouse cursor context,
-+  // so the cursor heuristic applies only to automatic mouse-driven retrieval.
-+  if (!config_->triggeredByUser) {
-+    const HCURSOR arrowCursor = LoadCursor(NULL, IDC_ARROW);
-+    const HCURSOR beamCursor = LoadCursor(NULL, IDC_IBEAM);
-+    const HCURSOR handCursor = LoadCursor(NULL, IDC_HAND);
-+    // An I-beam at either end is enough. Custom cursors are rejected unless the
-+    // application is explicitly listed to bypass cursor detection (for example,
-+    // Adobe Acrobat).
-+    if (config_->mouseDownCursor != beamCursor &&
-+        config_->mouseUpCursor != beamCursor) {
-+      if (config_->mouseUpCursor != arrowCursor &&
-+          config_->mouseUpCursor != handCursor)
-+        return IsInFilterList(programName,
-+                              config_->excludeClipboardCursorDetect);
-+
-+      // Arrow/hand cursors can still represent text in Chromium. Keep the known
-+      // UIA control-type exceptions: DevTools uses Group (50026), while pages
-+      // commonly expose Document (50030) or Text (50020) controls.
-+      // https://learn.microsoft.com/windows/win32/winauto/uiauto-controltype-ids
-+      if (controlType_ != UIA_GroupControlTypeId &&
-+          controlType_ != UIA_DocumentControlTypeId &&
-+          controlType_ != UIA_TextControlTypeId)
-+        return false;
-     }
+-    }
 -    return true;
++  // Lists are stored as lowercase UTF-8 by the JS configuration path.
++  std::wstring lowerProgramName = programName;
++  std::transform(lowerProgramName.begin(), lowerProgramName.end(),
++                 lowerProgramName.begin(), towlower);
++  const std::string utf8ProgramName = StringPool::WideToUtf8(lowerProgramName);
++  for (const auto &filterItem : filterList) {
++    if (utf8ProgramName.find(filterItem) != std::string::npos)
++      return true;
 +  }
-+  return true;
++  return false;
  }
  
 -/** Distinguish a selected text role from UI-object selections reported by MSAA. */
@@ -562,37 +519,35 @@ index 1bae811..f1322c8 100644
 -    }
 -    VariantClear(&role);
 -    return result;
-+/** Distinguish a selected text role from UI-object selections reported by MSAA.
-+ */
-+TextRetrievalResult
-+SelectionEngine::ClassifyAccessibleRole(IAccessible *accessible,
-+                                        const VARIANT &child) {
-+  if (!accessible)
-+    return TextRetrievalResult::Unavailable;
-+
-+  TextRetrievalResult result = TextRetrievalResult::Unavailable;
-+  VARIANT role;
-+  VariantInit(&role);
-+  const HRESULT hr = accessible->get_accRole(child, &role);
-+  if (hr == S_OK && role.vt == VT_I4) {
-+    // ROLE_SYSTEM_TEXT is not proof that text is available; it only permits
-+    // later fallback. Other concrete UI roles in this range represent object
-+    // selection.
-+    if (role.lVal != ROLE_SYSTEM_TEXT && role.lVal >= ROLE_SYSTEM_TITLEBAR &&
-+        role.lVal <= ROLE_SYSTEM_OUTLINEBUTTON)
-+      result = TextRetrievalResult::NonTextSelection;
-+  }
-+  VariantClear(&role);
-+  return result;
- }
+-}
++/** Apply clipboard enablement, program filters, cursor heuristics, and UIA
++ * exceptions. */
++bool SelectionEngine::ShouldProcessViaClipboard(
++    const std::wstring &programName) const {
++  if (!config_ || !config_->clipboardEnabled)
++    return false;
  
- /** Interpret the VARIANT forms returned by IAccessible::get_accSelection. */
+-/** Interpret the VARIANT forms returned by IAccessible::get_accSelection. */
 -TextRetrievalResult SelectionEngine::ProcessAccessibleSelection(IAccessible *accessible,
 -                                                                TextSelectionInfo &selectionInfo)
 -{
 -    if (!accessible)
 -        return TextRetrievalResult::Unavailable;
--
++  bool result = false;
++  switch (config_->clipboardFilterMode) {
++  case FilterMode::Default:
++    result = true;
++    break;
++  case FilterMode::IncludeList:
++    result = IsInFilterList(programName, config_->clipboardFilterList);
++    break;
++  case FilterMode::ExcludeList:
++    result = !IsInFilterList(programName, config_->clipboardFilterList);
++    break;
++  }
++  if (!result)
++    return false;
+ 
 -    TextRetrievalResult result = TextRetrievalResult::Unavailable;
 -    VARIANT selection;
 -    VariantInit(&selection);
@@ -633,69 +588,50 @@ index 1bae811..f1322c8 100644
 -                selectedAccessible->Release();
 -            }
 -        }
-+TextRetrievalResult
-+SelectionEngine::ProcessAccessibleSelection(IAccessible *accessible,
-+                                            TextSelectionInfo &selectionInfo) {
-+  if (!accessible)
-+    return TextRetrievalResult::Unavailable;
++  // A direct getCurrentSelection() call has no reliable mouse cursor context,
++  // so the cursor heuristic applies only to automatic mouse-driven retrieval.
++  if (!config_->triggeredByUser) {
++    const HCURSOR arrowCursor = LoadCursor(NULL, IDC_ARROW);
++    const HCURSOR beamCursor = LoadCursor(NULL, IDC_IBEAM);
++    const HCURSOR handCursor = LoadCursor(NULL, IDC_HAND);
++    // An I-beam at either end is enough. Custom cursors are rejected unless the
++    // application is explicitly listed to bypass cursor detection (for example,
++    // Adobe Acrobat).
++    if (config_->mouseDownCursor != beamCursor &&
++        config_->mouseUpCursor != beamCursor) {
++      if (config_->mouseUpCursor != arrowCursor &&
++          config_->mouseUpCursor != handCursor)
++        return IsInFilterList(programName,
++                              config_->excludeClipboardCursorDetect);
 +
-+  TextRetrievalResult result = TextRetrievalResult::Unavailable;
-+  VARIANT selection;
-+  VariantInit(&selection);
-+  const HRESULT hr = accessible->get_accSelection(&selection);
-+  if (SUCCEEDED(hr)) {
-+    if (selection.vt == VT_BSTR && selection.bstrVal) {
-+      if (AssignBoundedSelectionText(selection.bstrVal, selectionInfo.text))
-+        result = TextRetrievalResult::TextFound;
-+      else if (oversizedSelection_)
-+        result = TextRetrievalResult::OversizedSelection;
-+    }
-+    // Object/enumerated selections are deliberately classified separately so
-+    // the caller does not fall through to a simulated copy keystroke.
-+    else if (selection.vt == VT_UNKNOWN || (selection.vt & VT_ARRAY) != 0) {
-+      result = TextRetrievalResult::NonTextSelection;
-+    } else if (selection.vt == VT_I4) {
-+      result = ClassifyAccessibleRole(accessible, selection);
-+    } else if (selection.vt == VT_DISPATCH && selection.pdispVal) {
-+      IAccessible *selectedAccessible = nullptr;
-+      const HRESULT queryHr = selection.pdispVal->QueryInterface(
-+          IID_IAccessible, reinterpret_cast<void **>(&selectedAccessible));
-+      if (queryHr == S_OK && selectedAccessible) {
-+        VARIANT childSelf;
-+        VariantInit(&childSelf);
-+        childSelf.vt = VT_I4;
-+        childSelf.lVal = CHILDID_SELF;
-+        result = ClassifyAccessibleRole(selectedAccessible, childSelf);
-+        selectedAccessible->Release();
-+      }
++      // Arrow/hand cursors can still represent text in Chromium. Keep the known
++      // UIA control-type exceptions: DevTools uses Group (50026), while pages
++      // commonly expose Document (50030) or Text (50020) controls.
++      // https://learn.microsoft.com/windows/win32/winauto/uiauto-controltype-ids
++      if (controlType_ != UIA_GroupControlTypeId &&
++          controlType_ != UIA_DocumentControlTypeId &&
++          controlType_ != UIA_TextControlTypeId)
++        return false;
      }
 -    VariantClear(&selection);
 -    return result;
 +  }
-+  VariantClear(&selection);
-+  return result;
++  return true;
  }
  
- /**
-  * Read selection through a UIA TextPattern.
-  *
+-/**
+- * Read selection through a UIA TextPattern.
+- *
 - * When allowDocumentFallback is false, only GetSelection is safe. The active-selection
 - * attribute on an ancestor document can be unreliable and could expose the whole page.
-+ * When allowDocumentFallback is false, only GetSelection is safe. The
-+ * active-selection attribute on an ancestor document can be unreliable and
-+ * could expose the whole page.
++/** Distinguish a selected text role from UI-object selections reported by MSAA.
   */
 -bool SelectionEngine::TryGetTextViaTextPattern(IUIAutomationElement *element, TextSelectionInfo &selectionInfo,
 -                                               bool allowDocumentFallback)
 -{
 -    if (!element || IsStopping())
 -        return false;
-+bool SelectionEngine::TryGetTextViaTextPattern(IUIAutomationElement *element,
-+                                               TextSelectionInfo &selectionInfo,
-+                                               bool allowDocumentFallback) {
-+  if (!element || IsStopping())
-+    return false;
- 
+-
 -    // Ancestor walk-up calls this with allowDocumentFallback=false. IsSelectionActive
 -    // is only trustworthy on the focused element; using an ancestor document range can
 -    // return the entire page as though it were the selection.
@@ -737,46 +673,10 @@ index 1bae811..f1322c8 100644
 -                        range->Release();
 -                    }
 -                }
-+  // Ancestor walk-up calls this with allowDocumentFallback=false.
-+  // IsSelectionActive is only trustworthy on the focused element; using an
-+  // ancestor document range can return the entire page as though it were the
-+  // selection.
-+  bool result = false;
-+  IUIAutomationTextPattern *textPattern = nullptr;
-+  HRESULT hr = element->GetCurrentPatternAs(
-+      UIA_TextPatternId, __uuidof(IUIAutomationTextPattern),
-+      reinterpret_cast<void **>(&textPattern));
-+  if (SUCCEEDED(hr) && textPattern) {
-+    // First approach: ask the provider for its explicit selection ranges.
-+    IUIAutomationTextRangeArray *ranges = nullptr;
-+    hr = textPattern->GetSelection(&ranges);
-+    if (SUCCEEDED(hr) && ranges) {
-+      int count = 0;
-+      hr = ranges->get_Length(&count);
-+      if (SUCCEEDED(hr) && count > 0) {
-+        // Providers may return multiple ranges; keep the first non-empty range
-+        // with usable screen coordinates, matching the historical behavior.
-+        for (int i = 0;
-+             i < count && !result && !oversizedSelection_ && !IsStopping();
-+             i++) {
-+          IUIAutomationTextRange *range = nullptr;
-+          hr = ranges->GetElement(i, &range);
-+          if (SUCCEEDED(hr) && range) {
-+            BSTR text = nullptr;
-+            hr = range->GetText(selectionTextProbeUtf16Units, &text);
-+            if (SUCCEEDED(hr) && text) {
-+              if (AssignBoundedSelectionText(text, selectionInfo.text))
-+                result = SetTextRangeCoordinates(range, selectionInfo);
-+              SysFreeString(text);
-             }
+-            }
 -            ranges->Release();
-+            range->Release();
-+          }
-         }
-+      }
-+      ranges->Release();
-+    }
- 
+-        }
+-
 -        // Some providers expose the active selection only through DocumentRange.
 -        if (!result && allowDocumentFallback && !IsStopping())
 -        {
@@ -839,85 +739,39 @@ index 1bae811..f1322c8 100644
 -                        }
 -                        VariantClear(&active);
 -                    }
-+    // Some providers expose the active selection only through DocumentRange.
-+    if (!result && !oversizedSelection_ && allowDocumentFallback &&
-+        !IsStopping()) {
-+      IUIAutomationTextRange *documentRange = nullptr;
-+      hr = textPattern->get_DocumentRange(&documentRange);
-+      if (SUCCEEDED(hr) && documentRange) {
-+        bool hasSelection = false;
-+        // Query the selection attribute before bounded GetText. This avoids
-+        // reading a document when there is no active selection.
-+        VARIANT active;
-+        VariantInit(&active);
-+        const HRESULT attributeHr = documentRange->GetAttributeValue(
-+            UIA_IsSelectionActivePropertyId, &active);
-+        if (SUCCEEDED(attributeHr) && active.vt == VT_BOOL &&
-+            active.boolVal == VARIANT_TRUE && !IsStopping()) {
-+          BSTR text = nullptr;
-+          hr = documentRange->GetText(selectionTextProbeUtf16Units, &text);
-+          if (SUCCEEDED(hr) && text) {
-+            std::wstring selectedText;
-+            if (AssignBoundedSelectionText(text, selectedText)) {
-+              selectionInfo.text = std::move(selectedText);
-+              if (SetTextRangeCoordinates(documentRange, selectionInfo)) {
-+                result = true;
-+                hasSelection = true;
-+              }
-+            }
-+            SysFreeString(text);
-+          }
-+        }
-+        VariantClear(&active);
-+
-+        // Compatibility fallback for providers that report the active flag only
-+        // after expanding the range to TextUnit_Document.
-+        if (!hasSelection && !oversizedSelection_ && !IsStopping()) {
-+          hr = documentRange->ExpandToEnclosingUnit(TextUnit_Document);
-+          if (SUCCEEDED(hr)) {
-+            VariantInit(&active);
-+            hr = documentRange->GetAttributeValue(
-+                UIA_IsSelectionActivePropertyId, &active);
-+            if (SUCCEEDED(hr) && active.vt == VT_BOOL &&
-+                active.boolVal == VARIANT_TRUE && !IsStopping()) {
-+              BSTR text = nullptr;
-+              hr = documentRange->GetText(selectionTextProbeUtf16Units, &text);
-+              if (SUCCEEDED(hr) && text) {
-+                std::wstring documentText;
-+                if (AssignBoundedSelectionText(text, documentText)) {
-+                  selectionInfo.text = std::move(documentText);
-+                  result =
-+                      SetTextRangeCoordinates(documentRange, selectionInfo);
-                 }
+-                }
 -                documentRange->Release();
-+                SysFreeString(text);
-+              }
-             }
-+            VariantClear(&active);
-+          }
-         }
+-            }
+-        }
 -        textPattern->Release();
-+        documentRange->Release();
-+      }
-     }
+-    }
 -    return result;
-+    textPattern->Release();
++TextRetrievalResult
++SelectionEngine::ClassifyAccessibleRole(IAccessible *accessible,
++                                        const VARIANT &child) {
++  if (!accessible)
++    return TextRetrievalResult::Unavailable;
++
++  // This function is called only after MSAA reported an object selection.
++  // Fail closed unless the provider proves that object owns selectable text.
++  TextRetrievalResult result = TextRetrievalResult::NonTextSelection;
++  VARIANT role;
++  VariantInit(&role);
++  const HRESULT hr = accessible->get_accRole(child, &role);
++  if (hr == S_OK && role.vt == VT_I4) {
++    if (role.lVal == ROLE_SYSTEM_TEXT || role.lVal == ROLE_SYSTEM_DOCUMENT)
++      result = TextRetrievalResult::Unavailable;
 +  }
++  VariantClear(&role);
 +  return result;
  }
  
 -/** Retrieve selection through UI Automation and its legacy compatibility pattern. */
 -TextRetrievalResult SelectionEngine::GetTextViaUIAutomation(HWND hwnd, TextSelectionInfo &selectionInfo)
 -{
-+/** Retrieve selection through UI Automation and its legacy compatibility
-+ * pattern. */
-+TextRetrievalResult
-+SelectionEngine::GetTextViaUIAutomation(HWND hwnd,
-+                                        TextSelectionInfo &selectionInfo) {
- #ifdef _DEBUG
+-#ifdef _DEBUG
 -    assert(ownerThreadId_ == GetCurrentThreadId());
-+  assert(ownerThreadId_ == GetCurrentThreadId());
- #endif
+-#endif
 -    if (!automation_ || !hwnd || IsStopping())
 -        return TextRetrievalResult::Unavailable;
 -
@@ -942,64 +796,7 @@ index 1bae811..f1322c8 100644
 -        if (focusedElement)
 -            focusedElement->Release();
 -        return TextRetrievalResult::Unavailable;
-+  if (!automation_ || !hwnd || IsStopping())
-+    return TextRetrievalResult::Unavailable;
-+
-+  TextRetrievalResult result = TextRetrievalResult::Unavailable;
-+  TextRetrievalResult legacyResult = TextRetrievalResult::Unavailable;
-+  controlType_ = UIA_WindowControlTypeId;
-+
-+  // Preserve the original ElementFromHandle probe before querying the focused
-+  // element. Some providers do not expose usable accessibility data for an
-+  // invalid target HWND.
-+  IUIAutomationElement *windowElement = nullptr;
-+  HRESULT hr = automation_->ElementFromHandle(hwnd, &windowElement);
-+  if (FAILED(hr) || !windowElement)
-+    return TextRetrievalResult::Unavailable;
-+
-+  // Selection is normally owned by the focused element, not necessarily by the
-+  // HWND passed to ElementFromHandle.
-+  IUIAutomationElement *focusedElement = nullptr;
-+  hr = automation_->GetFocusedElement(&focusedElement);
-+  windowElement->Release();
-+  if (FAILED(hr) || !focusedElement || IsStopping()) {
-+    if (focusedElement)
-+      focusedElement->Release();
-+    return TextRetrievalResult::Unavailable;
-+  }
-+
-+  CONTROLTYPEID controlType = UIA_WindowControlTypeId;
-+  hr = focusedElement->get_CurrentControlType(&controlType);
-+  if (SUCCEEDED(hr))
-+    controlType_ = controlType;
-+
-+  // Approach 1: native UIA TextPattern on the focused element.
-+  if (TryGetTextViaTextPattern(focusedElement, selectionInfo, true))
-+    result = TextRetrievalResult::TextFound;
-+  else if (oversizedSelection_)
-+    result = TextRetrievalResult::OversizedSelection;
-+
-+  // Approach 2: UIA's LegacyIAccessible bridge.
-+  if (result != TextRetrievalResult::TextFound &&
-+      result != TextRetrievalResult::OversizedSelection && !IsStopping()) {
-+    IUIAutomationLegacyIAccessiblePattern *legacyPattern = nullptr;
-+    hr = focusedElement->GetCurrentPatternAs(
-+        UIA_LegacyIAccessiblePatternId,
-+        __uuidof(IUIAutomationLegacyIAccessiblePattern),
-+        reinterpret_cast<void **>(&legacyPattern));
-+    if (SUCCEEDED(hr) && legacyPattern) {
-+      IAccessible *accessible = nullptr;
-+      hr = legacyPattern->GetIAccessible(&accessible);
-+      if (SUCCEEDED(hr) && accessible) {
-+        legacyResult = ProcessAccessibleSelection(accessible, selectionInfo);
-+        if (legacyResult == TextRetrievalResult::TextFound)
-+          result = TextRetrievalResult::TextFound;
-+        else if (legacyResult == TextRetrievalResult::OversizedSelection)
-+          result = TextRetrievalResult::OversizedSelection;
-+        accessible->Release();
-+      }
-+      legacyPattern->Release();
-     }
+-    }
 -
 -    CONTROLTYPEID controlType = UIA_WindowControlTypeId;
 -    hr = focusedElement->get_CurrentControlType(&controlType);
@@ -1008,8 +805,52 @@ index 1bae811..f1322c8 100644
 -
 -    // Approach 1: native UIA TextPattern on the focused element.
 -    if (TryGetTextViaTextPattern(focusedElement, selectionInfo, true))
--        result = TextRetrievalResult::TextFound;
--
++/** Interpret the VARIANT forms returned by IAccessible::get_accSelection. */
++TextRetrievalResult
++SelectionEngine::ProcessAccessibleSelection(IAccessible *accessible,
++                                            TextSelectionInfo &selectionInfo) {
++  if (!accessible)
++    return TextRetrievalResult::Unavailable;
++
++  TextRetrievalResult result = TextRetrievalResult::Unavailable;
++  VARIANT selection;
++  VariantInit(&selection);
++  const HRESULT hr = accessible->get_accSelection(&selection);
++  if (SUCCEEDED(hr)) {
++    if (selection.vt == VT_BSTR && selection.bstrVal) {
++      if (AssignBoundedSelectionText(selection.bstrVal, selectionInfo.text))
+         result = TextRetrievalResult::TextFound;
++      else if (oversizedSelection_)
++        result = TextRetrievalResult::OversizedSelection;
++    }
++    // A direct child ID or accessible object can be classified by its concrete
++    // role. Enumerations and unknown layouts remain blocked because every item
++    // cannot be tied safely to the focused text owner.
++    else if (selection.vt == VT_I4) {
++      result = ClassifyAccessibleRole(accessible, selection);
++    } else if (selection.vt == VT_DISPATCH) {
++      result = TextRetrievalResult::NonTextSelection;
++      IAccessible *selectedAccessible = nullptr;
++      if (selection.pdispVal &&
++          SUCCEEDED(selection.pdispVal->QueryInterface(
++              IID_IAccessible,
++              reinterpret_cast<void **>(&selectedAccessible))) &&
++          selectedAccessible) {
++        VARIANT childSelf;
++        VariantInit(&childSelf);
++        childSelf.vt = VT_I4;
++        childSelf.lVal = CHILDID_SELF;
++        result = ClassifyAccessibleRole(selectedAccessible, childSelf);
++        selectedAccessible->Release();
++      }
++    } else if (selection.vt != VT_EMPTY && selection.vt != VT_NULL) {
++      result = TextRetrievalResult::NonTextSelection;
++    }
++  }
++  VariantClear(&selection);
++  return result;
++}
+ 
 -    // Approach 2: UIA's LegacyIAccessible bridge.
 -    if (result != TextRetrievalResult::TextFound && !IsStopping())
 -    {
@@ -1030,45 +871,12 @@ index 1bae811..f1322c8 100644
 -            }
 -            legacyPattern->Release();
 -        }
-+  }
-+
-+  // Approach 3: walk ancestors and retry TextPattern. In Chromium/Edge a
-+  // tabindex container can receive focus while an ancestor Document owns the
-+  // selection. See issue #18 and PR #14.
-+  if (result != TextRetrievalResult::TextFound &&
-+      result != TextRetrievalResult::OversizedSelection && !IsStopping()) {
-+    IUIAutomationTreeWalker *treeWalker = nullptr;
-+    hr = automation_->get_ControlViewWalker(&treeWalker);
-+    if (SUCCEEDED(hr) && treeWalker) {
-+      // The Document element is normally only a few levels above the focus
-+      // owner.
-+      constexpr int maxWalkUpLevels = 10;
-+      IUIAutomationElement *current = focusedElement;
-+      current->AddRef();
-+      for (int level = 0;
-+           level < maxWalkUpLevels &&
-+           result != TextRetrievalResult::TextFound &&
-+           result != TextRetrievalResult::OversizedSelection && !IsStopping();
-+           level++) {
-+        IUIAutomationElement *parent = nullptr;
-+        hr = treeWalker->GetParentElement(current, &parent);
-+        current->Release();
-+        current = nullptr;
-+        if (FAILED(hr) || !parent)
-+          break;
-+        current = parent;
-+        // Ancestors may use GetSelection only; document fallback is unsafe
-+        // here.
-+        if (TryGetTextViaTextPattern(current, selectionInfo, false))
-+          result = TextRetrievalResult::TextFound;
-+        else if (oversizedSelection_)
-+          result = TextRetrievalResult::OversizedSelection;
-+      }
-+      if (current)
-+        current->Release();
-+      treeWalker->Release();
-     }
-+  }
+-    }
++/** Read explicit GetSelection ranges only. DocumentRange is never a selection. */
++bool SelectionEngine::TryGetTextViaTextPattern(IUIAutomationElement *element,
++                                               TextSelectionInfo &selectionInfo) {
++  if (!element || IsStopping())
++    return false;
  
 -    // Approach 3: walk ancestors and retry TextPattern. In Chromium/Edge a tabindex
 -    // container can receive focus while an ancestor Document owns the selection.
@@ -1096,36 +904,108 @@ index 1bae811..f1322c8 100644
 -                // Ancestors may use GetSelection only; document fallback is unsafe here.
 -                if (TryGetTextViaTextPattern(current, selectionInfo, false))
 -                    result = TextRetrievalResult::TextFound;
--            }
++  bool result = false;
++  IUIAutomationTextPattern *textPattern = nullptr;
++  HRESULT hr = element->GetCurrentPatternAs(
++      UIA_TextPatternId, __uuidof(IUIAutomationTextPattern),
++      reinterpret_cast<void **>(&textPattern));
++  if (SUCCEEDED(hr) && textPattern) {
++    // First approach: ask the provider for its explicit selection ranges.
++    IUIAutomationTextRangeArray *ranges = nullptr;
++    hr = textPattern->GetSelection(&ranges);
++    if (SUCCEEDED(hr) && ranges) {
++      int count = 0;
++      hr = ranges->get_Length(&count);
++      if (SUCCEEDED(hr) && count > 0) {
++        // Providers may return multiple ranges; keep the first non-empty range
++        // regardless of whether the provider supplies screen coordinates.
++        for (int i = 0;
++             i < count && !result && !oversizedSelection_ && !IsStopping();
++             i++) {
++          IUIAutomationTextRange *range = nullptr;
++          hr = ranges->GetElement(i, &range);
++          if (SUCCEEDED(hr) && range) {
++            BSTR text = nullptr;
++            hr = range->GetText(selectionTextProbeUtf16Units, &text);
++            if (SUCCEEDED(hr) && text) {
++              if (AssignBoundedSelectionText(text, selectionInfo.text)) {
++                // Off-screen/occluded ranges may have no rectangles. Geometry is
++                // optional placement metadata, never proof of a text selection.
++                SetTextRangeCoordinates(range, selectionInfo);
++                result = true;
++              }
++              SysFreeString(text);
+             }
 -            if (current)
 -                current->Release();
 -            treeWalker->Release();
--        }
--    }
--
++            range->Release();
++          }
+         }
++      }
++      ranges->Release();
+     }
+ 
 -    if (result != TextRetrievalResult::TextFound && legacyResult == TextRetrievalResult::NonTextSelection)
 -        result = TextRetrievalResult::NonTextSelection;
 -    focusedElement->Release();
 -    return result;
-+  if (result != TextRetrievalResult::TextFound &&
-+      legacyResult == TextRetrievalResult::NonTextSelection)
-+    result = TextRetrievalResult::NonTextSelection;
-+  focusedElement->Release();
++    textPattern->Release();
++  }
 +  return result;
  }
  
- /** Retrieve selection through the legacy window IAccessible client object. */
+-/** Retrieve selection through the legacy window IAccessible client object. */
 -TextRetrievalResult SelectionEngine::GetTextViaAccessible(HWND hwnd, TextSelectionInfo &selectionInfo)
 -{
++/** Read the focused branch first, then unambiguous text ranges in the target window. */
 +TextRetrievalResult
-+SelectionEngine::GetTextViaAccessible(HWND hwnd,
-+                                      TextSelectionInfo &selectionInfo) {
++SelectionEngine::GetTextViaUIAutomation(HWND hwnd, TextSelectionInfo &selectionInfo) {
  #ifdef _DEBUG
 -    assert(ownerThreadId_ == GetCurrentThreadId());
 +  assert(ownerThreadId_ == GetCurrentThreadId());
  #endif
 -    if (!hwnd || IsStopping())
--        return TextRetrievalResult::Unavailable;
++  using Microsoft::WRL::ComPtr;
++  if (!automation_ || !hwnd || IsStopping())
++    return TextRetrievalResult::Unavailable;
++  controlType_ = UIA_WindowControlTypeId;
++
++  ComPtr<IUIAutomationElement> window;
++  if (FAILED(automation_->ElementFromHandle(hwnd, &window)) || !window)
++    return TextRetrievalResult::Unavailable;
++  ComPtr<IUIAutomationElement> focused;
++  automation_->GetFocusedElement(&focused);
++  ComPtr<IUIAutomationTreeWalker> walker;
++  automation_->get_ControlViewWalker(&walker);
++
++  // GetFocusedElement is global. Prove membership before accepting its text;
++  // switching applications during a slow provider call must not mix targets.
++  std::vector<ComPtr<IUIAutomationElement>> branch;
++  bool withinTarget = false;
++  if (focused && walker) {
++    ComPtr<IUIAutomationElement> current = focused;
++    for (int depth = 0; current && depth < 64 && !IsStopping(); ++depth) {
++      branch.push_back(current);
++      BOOL same = FALSE;
++      if (SUCCEEDED(automation_->CompareElements(current.Get(), window.Get(), &same)) && same) {
++        withinTarget = true;
++        break;
++      }
++      ComPtr<IUIAutomationElement> parent;
++      if (FAILED(walker->GetParentElement(current.Get(), &parent)))
++        break;
++      current = parent;
++    }
++  }
++  if (GetForegroundWindow() != hwnd)
++    return TextRetrievalResult::Unavailable;
++
++  if (withinTarget) {
++    focused->get_CurrentControlType(&controlType_);
++    for (size_t index = 0; index < branch.size(); ++index) {
++      if (IsStopping())
+         return TextRetrievalResult::Unavailable;
 -
 -    // Query the client object, which is where legacy applications expose selection.
 -    IAccessible *accessible = nullptr;
@@ -1136,6 +1016,56 @@ index 1bae811..f1322c8 100644
 -    const TextRetrievalResult result = ProcessAccessibleSelection(accessible, selectionInfo);
 -    accessible->Release();
 -    return result;
++      const auto &element = branch[index];
++      if (index > 0) {
++        CONTROLTYPEID ancestorType = UIA_CustomControlTypeId;
++        if (FAILED(element->get_CurrentControlType(&ancestorType)) ||
++            (ancestorType != UIA_DocumentControlTypeId &&
++             ancestorType != UIA_TextControlTypeId))
++          continue;
++      }
++      if (TryGetTextViaTextPattern(element.Get(), selectionInfo))
++        return TextRetrievalResult::TextFound;
++      if (oversizedSelection_)
++        return TextRetrievalResult::OversizedSelection;
++    }
++    ComPtr<IUIAutomationLegacyIAccessiblePattern> legacy;
++    if (SUCCEEDED(focused->GetCurrentPatternAs(UIA_LegacyIAccessiblePatternId,
++            IID_PPV_ARGS(&legacy))) && legacy) {
++      ComPtr<IAccessible> accessible;
++      if (SUCCEEDED(legacy->GetIAccessible(&accessible)) && accessible) {
++        const auto result = ProcessAccessibleSelection(accessible.Get(), selectionInfo);
++        if (result != TextRetrievalResult::Unavailable)
++          return result;
++      }
++    }
++  }
++  if (!withinTarget)
++    return TextRetrievalResult::Unavailable;
++
++  // Do not search arbitrary descendants. UIA does not prove that a retained
++  // selection in a child editor belongs to its focused container. The focused
++  // element and its ancestor branch above are the only defensible owners.
++  return TextRetrievalResult::Unavailable;
+ }
+ 
+-/** Extract first/last usable UIA bounding rectangles in physical screen coordinates. */
+-bool SelectionEngine::SetTextRangeCoordinates(IUIAutomationTextRange *range, TextSelectionInfo &selectionInfo)
+-{
+-    if (!range || IsStopping())
+-        return false;
+-
+-    SAFEARRAY *rectArray = nullptr;
+-    const HRESULT hr = range->GetBoundingRectangles(&rectArray);
+-    if (FAILED(hr) || !rectArray)
+-        return false;
++/** Retrieve selection through the legacy window IAccessible client object. */
++TextRetrievalResult
++SelectionEngine::GetTextViaAccessible(HWND hwnd,
++                                      TextSelectionInfo &selectionInfo) {
++#ifdef _DEBUG
++  assert(ownerThreadId_ == GetCurrentThreadId());
++#endif
 +  if (!hwnd || IsStopping())
 +    return TextRetrievalResult::Unavailable;
 +
@@ -1151,24 +1081,7 @@ index 1bae811..f1322c8 100644
 +      ProcessAccessibleSelection(accessible, selectionInfo);
 +  accessible->Release();
 +  return result;
- }
- 
--/** Extract first/last usable UIA bounding rectangles in physical screen coordinates. */
--bool SelectionEngine::SetTextRangeCoordinates(IUIAutomationTextRange *range, TextSelectionInfo &selectionInfo)
--{
--    if (!range || IsStopping())
--        return false;
--
--    SAFEARRAY *rectArray = nullptr;
--    const HRESULT hr = range->GetBoundingRectangles(&rectArray);
--    if (FAILED(hr) || !rectArray)
--        return false;
-+/** Extract first/last usable UIA bounding rectangles in physical screen
-+ * coordinates. */
-+bool SelectionEngine::SetTextRangeCoordinates(
-+    IUIAutomationTextRange *range, TextSelectionInfo &selectionInfo) {
-+  if (!range || IsStopping())
-+    return false;
++}
  
 -    // Access the SAFEARRAY directly; it stores repeating left/top/width/height values.
 -    double *rects = nullptr;
@@ -1178,9 +1091,11 @@ index 1bae811..f1322c8 100644
 -        SafeArrayDestroy(rectArray);
 -        return false;
 -    }
-+  SAFEARRAY *rectArray = nullptr;
-+  const HRESULT hr = range->GetBoundingRectangles(&rectArray);
-+  if (FAILED(hr) || !rectArray)
++/** Extract first/last usable UIA bounding rectangles in physical screen
++ * coordinates. */
++bool SelectionEngine::SetTextRangeCoordinates(
++    IUIAutomationTextRange *range, TextSelectionInfo &selectionInfo) {
++  if (!range || IsStopping())
 +    return false;
  
 -    LONG lowerBound = 0;
@@ -1209,13 +1124,38 @@ index 1bae811..f1322c8 100644
 -            lastValid = index;
 -            break;
 -        }
+-    }
++  SAFEARRAY *rectArray = nullptr;
++  const HRESULT hr = range->GetBoundingRectangles(&rectArray);
++  if (FAILED(hr) || !rectArray)
++    return false;
+ 
+-    bool found = false;
+-    // The first valid rectangle supplies the left edge of the first line; the last
+-    // supplies the right edge of the last line.
+-    if (firstValid >= 0 && lastValid >= 0)
+-    {
+-        selectionInfo.startTop.x = static_cast<LONG>(rects[firstValid]);
+-        selectionInfo.startTop.y = static_cast<LONG>(rects[firstValid + 1]);
+-        selectionInfo.startBottom.x = static_cast<LONG>(rects[firstValid]);
+-        selectionInfo.startBottom.y = static_cast<LONG>(rects[firstValid + 1] + rects[firstValid + 3]);
+-        selectionInfo.endBottom.x = static_cast<LONG>(rects[lastValid] + rects[lastValid + 2]);
+-        selectionInfo.endBottom.y = static_cast<LONG>(rects[lastValid + 1] + rects[lastValid + 3]);
+-        selectionInfo.endTop.x = static_cast<LONG>(rects[lastValid] + rects[lastValid + 2]);
+-        selectionInfo.endTop.y = static_cast<LONG>(rects[lastValid + 1]);
+-        selectionInfo.posLevel = SelectionPositionLevel::Full;
+-        found = true;
+-    }
+-    // Always unlock before destroying the SAFEARRAY, including the no-valid-rect case.
+-    SafeArrayUnaccessData(rectArray);
 +  // Access the SAFEARRAY directly; it stores repeating left/top/width/height
 +  // values.
 +  double *rects = nullptr;
 +  const HRESULT accessHr =
 +      SafeArrayAccessData(rectArray, reinterpret_cast<void **>(&rects));
 +  if (FAILED(accessHr) || !rects) {
-+    SafeArrayDestroy(rectArray);
+     SafeArrayDestroy(rectArray);
+-    return found;
 +    return false;
 +  }
 +
@@ -1234,34 +1174,14 @@ index 1bae811..f1322c8 100644
 +    if (rects[index + 2] > 1.0 && rects[index + 3] < 100.0) {
 +      firstValid = index;
 +      break;
-     }
--
--    bool found = false;
--    // The first valid rectangle supplies the left edge of the first line; the last
--    // supplies the right edge of the last line.
--    if (firstValid >= 0 && lastValid >= 0)
--    {
--        selectionInfo.startTop.x = static_cast<LONG>(rects[firstValid]);
--        selectionInfo.startTop.y = static_cast<LONG>(rects[firstValid + 1]);
--        selectionInfo.startBottom.x = static_cast<LONG>(rects[firstValid]);
--        selectionInfo.startBottom.y = static_cast<LONG>(rects[firstValid + 1] + rects[firstValid + 3]);
--        selectionInfo.endBottom.x = static_cast<LONG>(rects[lastValid] + rects[lastValid + 2]);
--        selectionInfo.endBottom.y = static_cast<LONG>(rects[lastValid + 1] + rects[lastValid + 3]);
--        selectionInfo.endTop.x = static_cast<LONG>(rects[lastValid] + rects[lastValid + 2]);
--        selectionInfo.endTop.y = static_cast<LONG>(rects[lastValid + 1]);
--        selectionInfo.posLevel = SelectionPositionLevel::Full;
--        found = true;
++    }
 +  }
 +  for (int i = rectCount - 1; i >= 0; i--) {
 +    const int index = i * 4;
 +    if (rects[index + 2] > 1.0 && rects[index + 3] < 100.0) {
 +      lastValid = index;
 +      break;
-     }
--    // Always unlock before destroying the SAFEARRAY, including the no-valid-rect case.
--    SafeArrayUnaccessData(rectArray);
--    SafeArrayDestroy(rectArray);
--    return found;
++    }
 +  }
 +
 +  bool found = false;
@@ -1291,7 +1211,7 @@ index 1bae811..f1322c8 100644
  }
  
  /**
-@@ -678,271 +739,365 @@ bool SelectionEngine::SetTextRangeCoordinates(IUIAutomationTextRange *range, Tex
+@@ -678,271 +637,382 @@ bool SelectionEngine::SetTextRangeCoordinates(IUIAutomationTextRange *range, Tex
   *
   * Every early exit after a non-empty backup must restore the user's clipboard.
   */
@@ -1310,19 +1230,7 @@ index 1bae811..f1322c8 100644
 -    {
 -        if (!clipboardLock.try_lock())
 -            return false;
-+  // Clipboard extraction is one indivisible save/copy/read/restore transaction.
-+  std::unique_lock<std::mutex> clipboardLock(g_clipboard_mutex,
-+                                             std::defer_lock);
-+  if (clipboardLockMode_ == ClipboardLockMode::TryOnly) {
-+    if (!clipboardLock.try_lock())
-+      return false;
-+  } else {
-+    // Only the worker may wait, and every wait remains stop-responsive.
-+    while (!clipboardLock.try_lock()) {
-+      if (IsStopping())
-+        return false;
-+      Sleep(5);
-     }
+-    }
 -    else
 -    {
 -        // Only the worker may wait, and every wait remains stop-responsive.
@@ -1332,46 +1240,22 @@ index 1bae811..f1322c8 100644
 -                return false;
 -            Sleep(5);
 -        }
+-    }
++  // Accessibility reads work while a hotkey is held. Only synthetic copy
++  // needs key release; read physical state here rather than delayed JS events.
++  const ULONGLONG releaseDeadline = GetTickCount64() + 2000;
++  while ((GetAsyncKeyState(VK_MENU) & 0x8000) ||
++         (GetAsyncKeyState(VK_SHIFT) & 0x8000) ||
++         (GetAsyncKeyState(VK_CONTROL) & 0x8000) ||
++         (GetAsyncKeyState(VK_LWIN) & 0x8000) ||
++         (GetAsyncKeyState(VK_RWIN) & 0x8000)) {
++    if (GetForegroundWindow() != hwnd || GetTickCount64() >= releaseDeadline ||
++        !SleepInterruptibly(10))
++      return false;
 +  }
-+
-+  // Compatibility timings inherited from the original clipboard path. Before
-+  // changing these polling windows, revalidate slow clipboard providers, user
-+  // Ctrl+C/X/V races, JetBrains IDEs, browsers, Office, PDF readers, and
-+  // delay-list applications.
-+  constexpr DWORD sleepInterval = 5;
-+  // Direct user-triggered retrieval skips this preprocessing because the
-+  // library, not a mouse gesture, initiated the action. Automatic retrieval
-+  // must avoid interfering with a user's Ctrl+C, Ctrl+X, or Ctrl+V already in
-+  // progress.
-+  if (!config_->triggeredByUser) {
-+    bool ctrlPressed = false;
-+    bool cPressed = false;
-+    bool xPressed = false;
-+    bool vPressed = false;
-+    int checkCount = 0;
-+    constexpr int maxChecks = 5;
-+    while (checkCount < maxChecks && !IsStopping()) {
-+      // A sequence change since mouse-down means the application/user already
-+      // copied the selection; read it directly without injecting another key.
-+      if (GetClipboardSequenceNumber() != clipboardSequence_)
-+        return ReadClipboard(selectionInfo.text) && !selectionInfo.text.empty();
-+
-+      const bool ctrlPressing = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
-+      const bool cPressing = (GetAsyncKeyState('C') & 0x8000) != 0;
-+      const bool xPressing = (GetAsyncKeyState('X') & 0x8000) != 0;
-+      const bool vPressing = (GetAsyncKeyState('V') & 0x8000) != 0;
-+      if (!ctrlPressing && !cPressing && !xPressing && !vPressing)
-+        break;
-+
-+      ctrlPressed = ctrlPressed || ctrlPressing;
-+      cPressed = cPressed || cPressing;
-+      xPressed = xPressed || xPressing;
-+      vPressed = vPressed || vPressing;
-+      checkCount++;
-+      if (!SleepInterruptibly(40))
-+        return false;
-     }
--
++  if (GetForegroundWindow() != hwnd)
++    return false;
+ 
 -    // Compatibility timings inherited from the original clipboard path. Before changing
 -    // these polling windows, revalidate slow clipboard providers, user Ctrl+C/X/V races,
 -    // JetBrains IDEs, browsers, Office, PDF readers, and delay-list applications.
@@ -1412,16 +1296,73 @@ index 1bae811..f1322c8 100644
 -        // Five 40 ms polls retain the historical ~200 ms intent-detection window.
 -        if (IsStopping() || checkCount >= maxChecks || (ctrlPressed && (cPressed || xPressed || vPressed)))
 -            return false;
++  // Clipboard extraction is one indivisible save/copy/read/restore transaction.
++  std::unique_lock<std::mutex> clipboardLock(g_clipboard_mutex,
++                                             std::defer_lock);
++  if (clipboardLockMode_ == ClipboardLockMode::TryOnly) {
++    if (!clipboardLock.try_lock())
++      return false;
++  } else {
++    // Only the worker may wait, and every wait remains stop-responsive.
++    while (!clipboardLock.try_lock()) {
++      if (IsStopping())
++        return false;
++      Sleep(5);
++    }
++  }
++
++  // Compatibility timings inherited from the original clipboard path. Before
++  // changing these polling windows, revalidate slow clipboard providers, user
++  // Ctrl+C/X/V races, JetBrains IDEs, browsers, Office, PDF readers, and
++  // delay-list applications.
++  constexpr DWORD sleepInterval = 5;
++  // Direct user-triggered retrieval skips this preprocessing because the
++  // library, not a mouse gesture, initiated the action. Automatic retrieval
++  // must avoid interfering with a user's Ctrl+C, Ctrl+X, or Ctrl+V already in
++  // progress.
++  if (!config_->triggeredByUser) {
++    bool ctrlPressed = false;
++    bool cPressed = false;
++    bool xPressed = false;
++    bool vPressed = false;
++    int checkCount = 0;
++    constexpr int maxChecks = 5;
++    while (checkCount < maxChecks && !IsStopping()) {
++      // A sequence change since mouse-down means the application/user already
++      // copied the selection; read it directly without injecting another key.
++      if (GetClipboardSequenceNumber() != clipboardSequence_)
++        return ReadClipboard(selectionInfo.text) && !selectionInfo.text.empty();
++
++      const bool ctrlPressing = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
++      const bool cPressing = (GetAsyncKeyState('C') & 0x8000) != 0;
++      const bool xPressing = (GetAsyncKeyState('X') & 0x8000) != 0;
++      const bool vPressing = (GetAsyncKeyState('V') & 0x8000) != 0;
++      if (!ctrlPressing && !cPressing && !xPressing && !vPressing)
++        break;
++
++      ctrlPressed = ctrlPressed || ctrlPressing;
++      cPressed = cPressed || cPressing;
++      xPressed = xPressed || xPressing;
++      vPressed = vPressed || vPressing;
++      checkCount++;
++      if (!SleepInterruptibly(40))
++        return false;
+     }
 +    // Five 40 ms polls retain the historical ~200 ms intent-detection window.
 +    if (IsStopping() || checkCount >= maxChecks ||
 +        (ctrlPressed && (cPressed || xPressed || vPressed)))
 +      return false;
 +  }
-+
+ 
+-    // Do not replace this with WM_COMMAND/ID_EDIT_COPY. That approach is known to crash
+-    // JetBrains IDEs; synthesized keyboard input is the established compatibility path.
 +  // Do not replace this with WM_COMMAND/ID_EDIT_COPY. That approach is known to
 +  // crash JetBrains IDEs; synthesized keyboard input is the established
 +  // compatibility path.
-+
+ 
+-    // Preserve every backupable clipboard format, not only text. A fallback must be
+-    // transparent to users who have copied files, images, or rich content.
+-    ClipboardBackup clipboardBackup;
 +  // Preserve every backupable clipboard format, not only text. A fallback must
 +  // be transparent to users who have copied files, images, or rich content.
 +  ClipboardBackup clipboardBackup;
@@ -1476,24 +1417,6 @@ index 1bae811..f1322c8 100644
 +  };
 +
 +  const auto restoreBackupIfUnchanged = [&](DWORD expectedSequence) -> bool {
-+    if (!OpenClipboard(nullptr))
-+      return false;
-+    // OpenClipboard excludes a writer between this comparison and restore.
-+    // A mismatch means another application owns newer user data; preserve it.
-+    if (GetClipboardSequenceNumber() != expectedSequence) {
-+      CloseClipboardSession();
-+      return false;
-     }
-+    return restoreOpenedClipboard();
-+  };
- 
--    // Do not replace this with WM_COMMAND/ID_EDIT_COPY. That approach is known to crash
--    // JetBrains IDEs; synthesized keyboard input is the established compatibility path.
--
--    // Preserve every backupable clipboard format, not only text. A fallback must be
--    // transparent to users who have copied files, images, or rich content.
--    ClipboardBackup clipboardBackup;
-+  const auto readTargetCopyAndRestore = [&](DWORD expectedSequence) -> bool {
      if (!OpenClipboard(nullptr))
 -        return false;
 -    BackupClipboard(clipboardBackup, true);
@@ -1552,6 +1475,25 @@ index 1bae811..f1322c8 100644
 -            return readSuccess && !selectionInfo.text.empty();
 -        }
 +      return false;
++    // OpenClipboard excludes a writer between this comparison and restore.
++    // A mismatch means another application owns newer user data; preserve it.
++    if (GetClipboardSequenceNumber() != expectedSequence) {
++      CloseClipboardSession();
++      return false;
+     }
++    return restoreOpenedClipboard();
++  };
+ 
+-    if (IsStopping() || ShouldKeyInterruptViaClipboard())
+-    {
+-        restoreBackup();
+-        return false;
+-    }
+-
+-    // Ctrl+C is the final fallback.
++  const auto readTargetCopyAndRestore = [&](DWORD expectedSequence) -> bool {
++    if (!OpenClipboard(nullptr))
++      return false;
 +    // A sequence transition alone is ambiguous: Clipboard managers and other
 +    // applications can write during the transaction. Accept content only when
 +    // the final owner belongs to the foreground target process.
@@ -1559,12 +1501,7 @@ index 1bae811..f1322c8 100644
 +        !ClipboardOwnerBelongsToTarget(hwnd)) {
 +      CloseClipboardSession();
 +      return false;
-     }
--
--    if (IsStopping() || ShouldKeyInterruptViaClipboard())
--    {
--        restoreBackup();
--        return false;
++    }
 +    const bool readSuccess = ReadClipboard(selectionInfo.text, true);
 +    const bool restoreSuccess = restoreOpenedClipboard();
 +    return restoreSuccess && readSuccess && !selectionInfo.text.empty();
@@ -1579,9 +1516,8 @@ index 1bae811..f1322c8 100644
 +    if (IsStopping() || ShouldKeyInterruptViaClipboard()) {
 +      restoreBackupIfUnchanged(transactionSequence);
 +      return false;
-     }
- 
--    // Ctrl+C is the final fallback.
++    }
++
 +    // Ctrl+Insert is tried first because it is less likely than Ctrl+C to
 +    // collide with application shortcuts, though some applications do not
 +    // support it.
@@ -1589,7 +1525,7 @@ index 1bae811..f1322c8 100644
 -    SendCopyKey(CopyKeyType::CtrlC);
 +    if (clipboardSequence_ != transactionSequence)
 +      return false;
-+    if (!SendCopyKey(CopyKeyType::CtrlInsert)) {
++    if (GetForegroundWindow() != hwnd || !SendCopyKey(CopyKeyType::CtrlInsert)) {
 +      restoreBackupIfUnchanged(transactionSequence);
 +      return false;
 +    }
@@ -1622,10 +1558,11 @@ index 1bae811..f1322c8 100644
 +      if (!SleepInterruptibly(10)) {
 +        restoreBackupIfUnchanged(transactionSequence);
          return false;
+-    }
 +      }
 +      const DWORD copiedSequence = GetClipboardSequenceNumber();
 +      return readTargetCopyAndRestore(copiedSequence);
-     }
++    }
 +    // Close the small race after the final poll. A late target copy can still be
 +    // consumed, while an unrelated owner is preserved and rejected.
 +    const DWORD afterCtrlInsertSequence = GetClipboardSequenceNumber();
@@ -1644,11 +1581,17 @@ index 1bae811..f1322c8 100644
 -    {
 -        restoreBackup();
 -        return false;
+-    }
+-    if (!SleepInterruptibly(10) || ShouldKeyInterruptViaClipboard())
+-    {
+-        restoreBackup();
+-        return false;
+-    }
 +  // Ctrl+C is the final fallback.
 +  clipboardSequence_ = GetClipboardSequenceNumber();
 +  if (clipboardSequence_ != transactionSequence)
 +    return false;
-+  if (!SendCopyKey(CopyKeyType::CtrlC)) {
++  if (GetForegroundWindow() != hwnd || !SendCopyKey(CopyKeyType::CtrlC)) {
 +    restoreBackupIfUnchanged(transactionSequence);
 +    return false;
 +  }
@@ -1659,11 +1602,7 @@ index 1bae811..f1322c8 100644
 +    if (GetClipboardSequenceNumber() != clipboardSequence_) {
 +      hasNewContent = true;
 +      break;
-     }
--    if (!SleepInterruptibly(10) || ShouldKeyInterruptViaClipboard())
--    {
--        restoreBackup();
--        return false;
++    }
 +    if (!SleepInterruptibly(sleepInterval))
 +      break;
 +  }
@@ -1673,14 +1612,11 @@ index 1bae811..f1322c8 100644
 +      const DWORD afterCtrlCSequence = GetClipboardSequenceNumber();
 +      if (afterCtrlCSequence != transactionSequence)
 +        return readTargetCopyAndRestore(afterCtrlCSequence);
-     }
++    }
 +    restoreBackupIfUnchanged(transactionSequence);
 +    return false;
 +  }
- 
--    const bool readSuccess = ReadClipboard(selectionInfo.text);
--    restoreBackup();
--    return readSuccess && !selectionInfo.text.empty();
++
 +  // Some applications update the clipboard several times after the first
 +  // sequence change. Adobe Acrobat is the original reason for the 135 ms delay
 +  // list.
@@ -1692,7 +1628,10 @@ index 1bae811..f1322c8 100644
 +    restoreBackupIfUnchanged(transactionSequence);
 +    return false;
 +  }
-+
+ 
+-    const bool readSuccess = ReadClipboard(selectionInfo.text);
+-    restoreBackup();
+-    return readSuccess && !selectionInfo.text.empty();
 +  const DWORD copiedSequence = GetClipboardSequenceNumber();
 +  return readTargetCopyAndRestore(copiedSequence);
  }
@@ -1751,10 +1690,12 @@ index 1bae811..f1322c8 100644
 +  const WORD keyCode = type == CopyKeyType::CtrlInsert ? VK_INSERT : 'C';
 +  if ((GetAsyncKeyState(keyCode) & 0x8000) != 0)
 +    return false;
-+  // Never synthesize KEYUP for a physically held modifier. The JS service waits
++  // Never synthesize KEYUP for a physically held modifier. The clipboard path waits
 +  // for release first; this native check closes races or missed hook events
 +  // safely.
-+  if (altPressing || shiftPressing)
++  if (altPressing || shiftPressing ||
++      (GetAsyncKeyState(VK_LWIN) & 0x8000) ||
++      (GetAsyncKeyState(VK_RWIN) & 0x8000))
 +    return false;
 +
 +  std::vector<INPUT> inputs;
@@ -1785,6 +1726,8 @@ index 1bae811..f1322c8 100644
 -        input.ki.wVk = VK_RCONTROL;
 -        input.ki.dwFlags = KEYEVENTF_KEYUP;
 -        inputs.push_back(input);
+-    }
+-    SendInput(static_cast<UINT>(inputs.size()), inputs.data(), sizeof(INPUT));
 +  }
 +  const UINT inserted =
 +      SendInput(static_cast<UINT>(inputs.size()), inputs.data(), sizeof(INPUT));
@@ -1802,8 +1745,7 @@ index 1bae811..f1322c8 100644
 +    if ((event.dwFlags & KEYEVENTF_KEYUP) == 0) {
 +      pressedByUs.push_back(event.wVk);
 +      continue;
-     }
--    SendInput(static_cast<UINT>(inputs.size()), inputs.data(), sizeof(INPUT));
++    }
 +    for (auto pressed = pressedByUs.end(); pressed != pressedByUs.begin();) {
 +      --pressed;
 +      if (*pressed == event.wVk) {
@@ -1889,7 +1831,7 @@ index 1bae811..f1322c8 100644
 +    stage_->store(stage, std::memory_order_release);
  }
 diff --git a/node_modules/selection-hook/src/windows/core/engine.h b/node_modules/selection-hook/src/windows/core/engine.h
-index 3bb1ec2..eae0f25 100644
+index 3bb1ec2..84b338b 100644
 --- a/node_modules/selection-hook/src/windows/core/engine.h
 +++ b/node_modules/selection-hook/src/windows/core/engine.h
 @@ -2,8 +2,9 @@
@@ -1904,7 +1846,7 @@ index 3bb1ec2..eae0f25 100644
   */
  #pragma once
  
-@@ -20,127 +21,157 @@
+@@ -20,127 +21,151 @@
  
  #include "types.h"
  
@@ -2105,19 +2047,13 @@ index 3bb1ec2..eae0f25 100644
 +  static bool TryWriteClipboard(const std::wstring &content);
 +
 +private:
-+  /** Retrieve from the focused UIA element, legacy bridge, then eligible
-+   * ancestors. */
++  /** Retrieve from the focused branch, legacy bridge, then target-window text providers. */
 +  TextRetrievalResult GetTextViaUIAutomation(HWND hwnd,
 +                                             TextSelectionInfo &selectionInfo);
 +
-+  /**
-+   * @warning DocumentRange fallback is safe only for the focused element.
-+   * Ancestors must pass false or a provider may return an entire document as
-+   * selected text.
-+   */
++  /** Read explicit selection ranges; geometry is optional, never use DocumentRange. */
 +  bool TryGetTextViaTextPattern(IUIAutomationElement *element,
-+                                TextSelectionInfo &selectionInfo,
-+                                bool allowDocumentFallback);
++                                TextSelectionInfo &selectionInfo);
 +
 +  /** Retrieve from the legacy window client object. */
 +  TextRetrievalResult GetTextViaAccessible(HWND hwnd,
@@ -3489,7 +3425,7 @@ index 1bd46ce..a36d44f 100644
 +  }
  }
 diff --git a/node_modules/selection-hook/src/windows/lib/clipboard.cc b/node_modules/selection-hook/src/windows/lib/clipboard.cc
-index 085026f..cd542b3 100644
+index 085026f..2a4e184 100644
 --- a/node_modules/selection-hook/src/windows/lib/clipboard.cc
 +++ b/node_modules/selection-hook/src/windows/lib/clipboard.cc
 @@ -7,8 +7,134 @@
@@ -4219,7 +4155,6 @@ index 085026f..cd542b3 100644
 +    return false;
 +  return RestoreClipboard(plan, isClipboardOpened);
  }
-\ No newline at end of file
 diff --git a/node_modules/selection-hook/src/windows/lib/clipboard.h b/node_modules/selection-hook/src/windows/lib/clipboard.h
 index 9688afd..bbcce32 100644
 --- a/node_modules/selection-hook/src/windows/lib/clipboard.h
@@ -4513,7 +4448,7 @@ index 5c093b1..2e5cab9 100644
  };
 \ No newline at end of file
 diff --git a/node_modules/selection-hook/src/windows/selection_hook.cc b/node_modules/selection-hook/src/windows/selection_hook.cc
-index 50fa791..ca7cde4 100644
+index 50fa791..6e180db 100644
 --- a/node_modules/selection-hook/src/windows/selection_hook.cc
 +++ b/node_modules/selection-hook/src/windows/selection_hook.cc
 @@ -16,12 +16,14 @@
@@ -5524,7 +5459,7 @@ index 50fa791..ca7cde4 100644
 +    TextSelectionInfo selectionInfo;
 +    is_triggered_by_user = true;
 +    if (!GetSelectedText(hwnd, selectionInfo) ||
-+        IsTrimmedEmpty(selectionInfo.text)) {
++        IsTrimmedEmpty(selectionInfo.text) || GetForegroundWindow() != hwnd) {
 +      is_triggered_by_user = false;
 +      return env.Null();
      }

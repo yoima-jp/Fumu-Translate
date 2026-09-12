@@ -88,6 +88,7 @@ export interface PopupWindowPort {
   showFollowUpEvent(event: FollowUpEvent): void;
   showManual(requestId: string, clipboardText: string | null): void;
   showError(requestId: string, message: string): void;
+  showErrorInMain(requestId: string, message: string): void;
   resize(request: PopupResizeRequest): void;
   containsPhysicalPoint(point: Point): boolean;
   hide(): void;
@@ -334,7 +335,9 @@ export class AppController {
         return;
       }
 
-      await this.#showClipboardOrManual(requestId, requestEpoch, surface);
+      // 選択取得の失敗時に既存のクリップボードを使うと、無関係な過去の文章を
+      // 翻訳してしまう。クリップボードの読み取りは明示的な翻訳操作に限定する。
+      throw new Error('Selection was unavailable.');
     } catch (error) {
       if (!this.#isCurrent(requestEpoch)) {
         return;
@@ -349,6 +352,7 @@ export class AppController {
       });
       this.#clearActiveSession();
       if (surface === 'popup') this.#popup.showError(requestId, message);
+      else this.#popup.showErrorInMain(requestId, message);
       this.#publishStatus();
     }
   }
