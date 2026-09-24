@@ -43,6 +43,20 @@ export interface ChatGptModel {
 
 const CHATGPT_MODELS: readonly ChatGptModel[] = Object.freeze([
   {
+    id: 'gpt-6-sol',
+    name: 'GPT-6 Sol',
+    contextWindow: 1_050_000,
+    maxTokens: 128_000,
+    reasoning: true,
+  },
+  {
+    id: 'gpt-6-luna',
+    name: 'GPT-6 Luna',
+    contextWindow: 1_050_000,
+    maxTokens: 128_000,
+    reasoning: true,
+  },
+  {
     id: 'gpt-5.6-sol',
     name: 'GPT-5.6 Sol',
     contextWindow: 272_000,
@@ -64,21 +78,6 @@ const CHATGPT_MODELS: readonly ChatGptModel[] = Object.freeze([
     reasoning: true,
   },
   { id: 'gpt-5.5', name: 'GPT-5.5', contextWindow: 272_000, maxTokens: 128_000, reasoning: true },
-  { id: 'gpt-5.4', name: 'GPT-5.4', contextWindow: 272_000, maxTokens: 128_000, reasoning: true },
-  {
-    id: 'gpt-5.4-mini',
-    name: 'GPT-5.4 Mini',
-    contextWindow: 272_000,
-    maxTokens: 128_000,
-    reasoning: true,
-  },
-  {
-    id: 'gpt-5.3-codex-spark',
-    name: 'GPT-5.3 Codex Spark',
-    contextWindow: 128_000,
-    maxTokens: 128_000,
-    reasoning: true,
-  },
 ]);
 
 export interface ChatGptLoginOptions {

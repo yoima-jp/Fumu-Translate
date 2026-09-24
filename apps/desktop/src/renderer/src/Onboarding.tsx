@@ -335,7 +335,7 @@ function ToggleSwitch({ checked }: { readonly checked: boolean }): React.JSX.Ele
   );
 }
 
-const RECOMMENDED_CHATGPT_MODEL_ID = 'gpt-5.6-luna';
+const RECOMMENDED_CHATGPT_MODEL_ID = 'gpt-6-luna';
 
 export function recommendedChatGptModelId(models: readonly ProviderModel[]): string | null {
   return (

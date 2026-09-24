@@ -18,6 +18,7 @@ describe('translation language routing', () => {
     (sourceText) => {
       const request = payload({ sourceText });
       expect(request).not.toHaveProperty('targetLanguage');
+      expect(request.languageRouting.otherLanguageTarget).toBe('English');
       expect(request.languageRouting.rules).toEqual([
         'If the detected source language is Japanese, translate to English.',
         'For every other source language, translate to Japanese.',
@@ -25,10 +26,11 @@ describe('translation language routing', () => {
     },
   );
   it('keeps the configured non-native target', () => {
-    expect(
-      payload({ languageRouting: { nativeLanguage: 'Japanese', otherLanguageTarget: 'French' } })
-        .languageRouting.rules[0],
-    ).toContain('translate to French');
+    const request = payload({
+      languageRouting: { nativeLanguage: 'Japanese', otherLanguageTarget: 'French' },
+    });
+    expect(request.languageRouting.otherLanguageTarget).toBe('French');
+    expect(request.languageRouting.rules[0]).toContain('translate to French');
   });
   it('gives explicit targets precedence over automatic routing', () => {
     const request = payload({ targetLanguage: 'German' });

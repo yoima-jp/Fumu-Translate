@@ -194,8 +194,8 @@ export async function fetchProviderModels(
   fetchLike: FetchLike = fetch,
 ): Promise<readonly ProviderModel[]> {
   if (provider.kind === 'chatgpt') {
-    // Codex backend does not expose the Platform APIの /models と同じ公開一覧を持たない。
-    // ChatGPTには一般APIのmodel-list endpointがないため、通信確認済みのIDだけを提示する。
+    // The ChatGPT Codex endpoint has no public model-list API. Keep the documented current
+    // Codex models and compatibility IDs in the provider package; account access can vary by plan.
     return listChatGptModels().map((model) => ({
       id: model.id,
       name: model.name,

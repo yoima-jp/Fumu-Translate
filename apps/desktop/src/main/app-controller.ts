@@ -43,6 +43,7 @@ import type {
 } from '../shared/settings-contracts';
 import type { HotkeyRegistration } from './os/hotkey/electron-hotkey-service';
 import { SelectionTextTooLargeError } from './os/selection/selection-hook-service';
+import { automaticTargetLanguage } from './automatic-target-language';
 
 export const MAX_CLIPBOARD_TEXT_CODE_POINTS = 100_000;
 const POPUP_DISMISS_HOTKEY = 'Escape';
@@ -988,6 +989,15 @@ export class AppController {
       return;
     }
 
+    // 自動切替で翻訳先を確定できる原文は、Providerの言語判定に委ねずここで固定する。
+    // 判定できない場合だけnullになり、下のlanguageRoutingが使われる。
+    const automaticTargetLanguageOverride =
+      operation === 'translate' &&
+      this.#lastRequestedTargetLanguage === null &&
+      this.#mainConversationDirection === null
+        ? automaticTargetLanguage(selection.text, this.#settings.snapshot)
+        : null;
+
     const request: TranslationRequest = {
       requestId,
       sourceText: selection.text,
@@ -996,8 +1006,8 @@ export class AppController {
       ...(this.#settings.snapshot.nativeLanguage === null
         ? {}
         : { explanationLanguage: this.#settings.snapshot.nativeLanguage }),
-      // 翻訳先は三分岐にする。言語検出はProviderに任せるが、
-      // ルール自体は構造化データとして固定しsourceText内の指示と分離する。
+      // 翻訳先は明示指定、会話の方向、機械的に確定できた言語、Providerのルーティングの順に決める。
+      // ルーティング規則は構造化データとして渡し、sourceText内の指示と分離する。
       ...(operation === 'translate' && this.#lastRequestedTargetLanguage !== null
         ? { targetLanguage: this.#lastRequestedTargetLanguage }
         : operation === 'translate' && this.#mainConversationDirection === 'outgoing'
@@ -1006,14 +1016,16 @@ export class AppController {
               this.#mainConversationDirection === 'incoming' &&
               this.#settings.snapshot.nativeLanguage !== null
             ? { targetLanguage: this.#settings.snapshot.nativeLanguage }
-            : operation === 'translate' && this.#settings.snapshot.nativeLanguage !== null
-              ? {
-                  languageRouting: {
-                    nativeLanguage: this.#settings.snapshot.nativeLanguage,
-                    otherLanguageTarget: this.#settings.snapshot.otherLanguageTarget,
-                  },
-                }
-              : {}),
+            : operation === 'translate' && automaticTargetLanguageOverride !== null
+              ? { targetLanguage: automaticTargetLanguageOverride }
+              : operation === 'translate' && this.#settings.snapshot.nativeLanguage !== null
+                ? {
+                    languageRouting: {
+                      nativeLanguage: this.#settings.snapshot.nativeLanguage,
+                      otherLanguageTarget: this.#settings.snapshot.otherLanguageTarget,
+                    },
+                  }
+                : {}),
       ...(writingStyle === null
         ? {}
         : { writingStyle: { name: writingStyle.name, instruction: writingStyle.instruction } }),

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   ChatGptClient,
+  listChatGptModels,
   parseChatGptCredential,
   serializeChatGptCredential,
   type FetchLike,
@@ -12,6 +13,14 @@ function streamResponse(events: readonly unknown[]): Response {
 }
 
 describe('ChatGPT provider credential boundary', () => {
+  it('offers the current Codex account models before older compatibility models', () => {
+    const modelIds = listChatGptModels().map((model) => model.id);
+    expect(modelIds.slice(0, 2)).toEqual(['gpt-6-sol', 'gpt-6-luna']);
+    expect(modelIds).not.toContain('gpt-5.3-codex-spark');
+    expect(modelIds).not.toContain('gpt-5.4-mini');
+    expect(modelIds).not.toContain('gpt-5.4');
+  });
+
   it('rejects malformed or oversized credentials before a provider request', () => {
     expect(() => parseChatGptCredential('{"type":"oauth"}')).toThrow(/壊れています/u);
     expect(() => parseChatGptCredential('x'.repeat(1024 * 1024 + 1))).toThrow(/大きすぎ/u);
@@ -77,7 +86,7 @@ describe('ChatGPT provider credential boundary', () => {
       ]);
     });
     const client = new ChatGptClient({
-      model: 'gpt-5.4',
+      model: 'gpt-6-sol',
       credential: serializeChatGptCredential({
         type: 'oauth',
         access: 'expired',

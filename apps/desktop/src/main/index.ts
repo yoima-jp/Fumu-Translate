@@ -131,6 +131,11 @@ async function startApplication(): Promise<void> {
     (url) => shell.openExternal(url),
     undefined,
     resolveEnvironmentUiLocale(app.getPreferredSystemLanguages()),
+    (error) =>
+      logger.warn('Provider saved, but active models could not be refreshed', {
+        errorName: error instanceof Error ? error.name : typeof error,
+        message: error instanceof Error ? error.message : 'Unknown provider activation error',
+      }),
   );
   const settingsError = settings.initialize();
   if (settingsError !== null) {

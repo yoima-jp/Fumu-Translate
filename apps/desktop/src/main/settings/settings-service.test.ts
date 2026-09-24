@@ -11,11 +11,14 @@ import {
 } from './settings-service';
 
 class MemorySecrets implements SecretStore {
+  failDecrypt = false;
+
   encrypt(value: string): Buffer {
     return Buffer.from(value);
   }
 
   decrypt(value: Buffer): string {
+    if (this.failDecrypt) throw new Error('Credential cannot be decrypted.');
     return value.toString();
   }
 }
@@ -70,16 +73,19 @@ function setup(
   const database = new FumuDatabase(':memory:');
   const repository = new SettingsRepository(database);
   const providers = new FakeProviders();
+  const secrets = new MemorySecrets();
+  const onProviderActivationFailure = vi.fn();
   const service = new SettingsService(
     repository,
-    new MemorySecrets(),
+    secrets,
     new MemoryStartup(),
     providers,
     () => undefined,
     chatGptLogin,
     environmentUiLocale,
+    onProviderActivationFailure,
   );
-  return { database, repository, providers, service };
+  return { database, repository, providers, secrets, onProviderActivationFailure, service };
 }
 
 describe('SettingsService credential boundaries', () => {
@@ -131,6 +137,44 @@ describe('SettingsService credential boundaries', () => {
     expect(test.repository.getProvider(chatGpt.id!)?.encryptedSecret?.toString()).toBe(
       'rotated-credential',
     );
+    test.database.close();
+  });
+
+  it('saves a new provider even when an unrelated active provider credential is unreadable', () => {
+    const test = setup();
+    const brokenChatGptId = '00000000-0000-4000-8000-000000000010';
+    const brokenChatGpt = {
+      id: brokenChatGptId,
+      name: 'ChatGPT',
+      kind: 'chatgpt' as const,
+      models: [{ id: 'gpt-old', metadata: {}, source: 'manual' as const }],
+      enabledModelIds: ['gpt-old'],
+    };
+    test.repository.saveProvider(brokenChatGpt, {
+      action: 'replace',
+      value: Buffer.from('unreadable'),
+    });
+    test.repository.setUsedModels([{ providerId: brokenChatGptId, modelId: 'gpt-old' }]);
+    test.secrets.failDecrypt = true;
+
+    const localProviderId = '00000000-0000-4000-8000-000000000011';
+    const localProvider: ProviderConnectionDefinition = {
+      id: localProviderId,
+      name: 'Ollama',
+      kind: 'ollama',
+      baseUrl: 'http://localhost:11434/',
+      models: [{ id: 'llama3', metadata: {}, source: 'manual' }],
+      enabledModelIds: ['llama3'],
+    };
+    const snapshot = test.service.saveProvider({
+      provider: localProvider,
+      secret: { action: 'clear' },
+    });
+
+    expect(snapshot.providers.map((item) => item.id)).toContain(localProvider.id);
+    expect(test.repository.getProvider(localProviderId)?.provider.name).toBe('Ollama');
+    expect(test.onProviderActivationFailure).toHaveBeenCalledOnce();
+    expect(test.providers.models).toEqual([]);
     test.database.close();
   });
 });

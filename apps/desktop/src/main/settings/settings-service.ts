@@ -101,6 +101,7 @@ export class SettingsService {
   readonly #openExternal: (url: string) => void | Promise<void>;
   readonly #chatGptLogin: typeof performChatGptLogin;
   readonly #environmentUiLocale: UiLocale;
+  readonly #onProviderActivationFailure: (error: unknown) => void;
   #activeChatGptLogin: ChatGptLoginAttempt | null = null;
   #chatGptLoginTransition: Promise<void> = Promise.resolve();
 
@@ -114,6 +115,7 @@ export class SettingsService {
     },
     chatGptLogin: typeof performChatGptLogin = performChatGptLogin,
     environmentUiLocale: UiLocale = DEFAULT_UI_LOCALE,
+    onProviderActivationFailure: (error: unknown) => void = () => undefined,
   ) {
     this.#repository = repository;
     this.#secrets = secrets;
@@ -122,6 +124,7 @@ export class SettingsService {
     this.#openExternal = openExternal;
     this.#chatGptLogin = chatGptLogin;
     this.#environmentUiLocale = environmentUiLocale;
+    this.#onProviderActivationFailure = onProviderActivationFailure;
   }
 
   initialize(): Error | null {
@@ -315,14 +318,23 @@ export class SettingsService {
       (reference) =>
         reference.providerId !== id || candidate.enabledModelIds.includes(reference.modelId),
     );
-    const runtime = this.#runtimeModels(references, candidate, apiKey);
-    this.#providers.validate(runtime);
+    // Validate the provider being saved before committing it. Unrelated active providers
+    // may have stale credentials; those must not prevent adding or repairing another provider.
+    const candidateReferences = references.filter((reference) => reference.providerId === id);
+    this.#providers.validate(this.#runtimeModels(candidateReferences, candidate, apiKey));
     this.#repository.saveProvider(
       definition,
       this.#encryptedSecretUpdate(definition, request.secret),
     );
     this.#stagedChatGptCredentials.delete(id);
-    this.#providers.configure(runtime);
+    try {
+      // Keep the saved provider even if an unrelated existing credential can no longer be
+      // decrypted. ProviderRegistry builds a replacement set before swapping active clients,
+      // so a failed reconfiguration leaves the previous runtime intact.
+      this.#providers.configure(this.#runtimeModels(references, candidate, apiKey));
+    } catch (error) {
+      this.#onProviderActivationFailure(error);
+    }
     return this.#publish();
   }
 
