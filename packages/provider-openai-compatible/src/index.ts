@@ -96,6 +96,43 @@ function providerPayloadError(message: string): LlmProviderError {
   });
 }
 
+function providerMessages(messages: LlmRequest['messages']): readonly unknown[] {
+  return messages.map((message) => {
+    const images = message.images;
+    if (images === undefined || images.length === 0) {
+      // imagesは共通型の内部情報であり、互換APIの独自フィールドとしては送らない。
+      return images === undefined ? message : { ...message, images: undefined };
+    }
+
+    return {
+      ...message,
+      content: [
+        ...(message.content.length === 0 ? [] : [{ type: 'text', text: message.content }]),
+        ...images.map((image) => ({
+          type: 'image_url',
+          image_url: { url: `data:${image.mediaType};base64,${image.base64Data}` },
+        })),
+      ],
+      images: undefined,
+    };
+  });
+}
+
+function indicatesUnsupportedImageInput(status: number, details: string): boolean {
+  if (status !== 400 && status !== 404 && status !== 422) return false;
+
+  const mentionsImageInput = /\b(?:images?|image_url|vision|multimodal)\b/iu.test(details);
+  const indicatesUnsupported =
+    /\b(?:unsupported|not supported|does not support|doesn't support|do not support|don't support|cannot|can't|not available|not enabled|not allowed|no support for|only supported (?:by|with|for|on)|no endpoints? found)\b/iu.test(
+      details,
+    );
+  const onlySupportsText =
+    /\b(?:only supports? text|supports? only text|text[- ]only|only accepts? text)\b/iu.test(
+      details,
+    );
+  return onlySupportsText || (mentionsImageInput && indicatesUnsupported);
+}
+
 function finishReasonError(reason: string): LlmProviderError | null {
   switch (reason) {
     case 'stop':
@@ -239,6 +276,7 @@ export class OpenAiCompatibleClient implements LlmClient {
   }
 
   async createSession(request: LlmRequest): Promise<LlmSession> {
+    const hasImages = request.messages.some((message) => (message.images?.length ?? 0) > 0);
     const abortController = new AbortController();
     const abortFromCaller = (): void => {
       abortController.abort(request.signal?.reason);
@@ -262,7 +300,7 @@ export class OpenAiCompatibleClient implements LlmClient {
 
     const body: Record<string, unknown> = {
       model: this.#config.model,
-      messages: request.messages,
+      messages: providerMessages(request.messages),
       stream: true,
     };
     if (request.temperature !== undefined) {
@@ -309,7 +347,18 @@ export class OpenAiCompatibleClient implements LlmClient {
           if (abortController.signal.aborted) throw error;
           return '';
         });
-        throw statusError(response.status, details);
+        const httpError = statusError(response.status, details);
+        if (hasImages && indicatesUnsupportedImageInput(response.status, details)) {
+          // OpenAI系はimage_url、Groq・OpenRouter・DeepInfra・Mistral・Ollama・LM Studio等は
+          // 自由形式の本文で非対応を返すことがある。特定社のJSON形式に依存せず、画像要求の
+          // 400/404/422で画像入力の非対応またはテキスト専用と判断できる場合だけ分類する。
+          throw new LlmProviderError(httpError.message, {
+            code: 'unsupported-input',
+            retryable: false,
+            status: response.status,
+          });
+        }
+        throw httpError;
       } finally {
         removeExternalAbortListener();
       }
