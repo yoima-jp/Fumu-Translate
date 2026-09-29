@@ -300,9 +300,9 @@ export function registerIpcHandlers(
   });
 
   ipcMain.handle(IPC_CHANNELS.settingsGet, (event) => {
-    // Popupもメインと同じ外見設定を描画するため、信頼済みRendererには読み取りだけ許可する。
-    // ショートカットやプロバイダー等の更新IPCは引き続きmainOnlyのままにする。
-    eitherWindow(event);
+    // Popupと範囲選択overlayもメインと同じ外見・表示言語で描画するため、信頼済みRendererには
+    // 読み取りだけ許可する。ショートカットやプロバイダー等の更新IPCは引き続きmainOnlyのままにする。
+    assertTrustedSender(event, ['main', 'popup', 'screen-capture']);
     return controller.settings;
   });
 

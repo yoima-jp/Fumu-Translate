@@ -100,7 +100,7 @@ export function createScreenRegionCaptureService(
         const captureTask = (async (): Promise<CapturedScreenRegion | null> => {
           try {
             // 画面全体を一度に扱うと、displayごとのscaleFactorや座標原点を混ぜてしまう。
-            // ベータではカーソルのあるdisplayだけをoverlayと画像の両方に使う。
+            // 現状はカーソルのあるdisplayだけをoverlayと画像の両方に使う。
             const cursorPoint = screen.getCursorScreenPoint();
             const display = screen.getDisplayNearestPoint(cursorPoint);
             const selection = await new Promise<ScreenCaptureSelection | null>((resolve) => {

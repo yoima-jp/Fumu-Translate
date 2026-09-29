@@ -38,7 +38,7 @@ export const SELECTION_METHOD_VALUES = [
   'clipboard-copy',
   'clipboard-current',
   'manual',
-  // スクリーンショット翻訳（ベータ）で、画面の範囲を画像として読み取り文字起こししたもの。
+  // スクリーンショット翻訳で、画面の範囲を画像として読み取り文字起こししたもの。
   'screenshot',
   'unknown',
 ] as const;
@@ -245,7 +245,7 @@ export interface FumuDesktopApi {
   beginShortcutCapture(): Promise<void>;
   endShortcutCapture(): Promise<void>;
   updateShortcut(shortcut: string): Promise<ShortcutUpdateResult>;
-  /** nullでスクリーンショット翻訳（ベータ）を無効化する。 */
+  /** nullでスクリーンショット翻訳を無効化する。 */
   updateScreenshotShortcut(shortcut: string | null): Promise<ScreenshotShortcutUpdateResult>;
   /** メインウィンドウに貼り付け・ドロップされた画像の文字を書き起こす。翻訳はしない。 */
   extractImageText(image: ImageInputPayload): Promise<ImageTextExtractionOutcome>;

@@ -6,6 +6,8 @@ import {
   ChevronDown,
   Copy,
   BadgeAlert,
+  ChevronsUpDown,
+  PenLine,
   RefreshCw,
   RotateCcw,
   Sparkles,
@@ -713,8 +715,52 @@ function FollowUpMessages({ messages }: { readonly messages: readonly FollowUpMe
   ));
 }
 
+// 画像から読み取った原文は長く、画像そのものが主な手がかりになる。画像があるときは原文を数行に
+// 畳み、はみ出した場合だけ展開ボタンを出して結果（訳文）を画面内に収める。
+function SourceText({
+  text,
+  collapsible,
+}: {
+  readonly text: string;
+  readonly collapsible: boolean;
+}): React.JSX.Element {
+  const { t } = useI18n();
+  const textRef = useRef<HTMLParagraphElement>(null);
+  const [expanded, setExpanded] = useState(false);
+  const [overflowing, setOverflowing] = useState(false);
+  useEffect(() => setExpanded(false), [text]);
+  useLayoutEffect(() => {
+    // 展開中は常に全文が収まるため測らない。測ると展開ボタン自体が消えてしまう。
+    if (expanded) return;
+    const element = textRef.current;
+    setOverflowing(
+      collapsible && element !== null && element.scrollHeight > element.clientHeight + 1,
+    );
+  }, [collapsible, expanded, text]);
+  return (
+    <div className="nani-source-text">
+      <p ref={textRef} className={collapsible && !expanded ? 'collapsed' : undefined}>
+        {text}
+      </p>
+      {collapsible && (overflowing || expanded) && (
+        <button
+          className="nani-icon-button"
+          type="button"
+          aria-label={expanded ? t('result.collapseSource') : t('result.expandSource')}
+          aria-expanded={expanded}
+          onClick={() => setExpanded((value) => !value)}
+        >
+          <ChevronsUpDown size={17} />
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function TranslationResultPanel({
   sourceText,
+  sourceImageUrl = null,
+  onEditSource,
   translation,
   followUpMessages,
   appliedInstructions = [],
@@ -723,6 +769,10 @@ export function TranslationResultPanel({
   showFollowUpForm = interactive,
 }: {
   readonly sourceText: string;
+  /** 画像から翻訳した場合の元画像。原文カードの先頭に表示する。 */
+  readonly sourceImageUrl?: string | null;
+  /** 指定すると原文カードに編集ボタンを出し、直した原文で翻訳し直せるようにする。 */
+  readonly onEditSource?: (text: string) => void;
   readonly translation: TranslationViewState;
   readonly followUpMessages: readonly FollowUpMessageView[];
   readonly appliedInstructions?: readonly AppliedTranslationInstruction[];
@@ -736,6 +786,8 @@ export function TranslationResultPanel({
   const pending = translation.phase === 'loading' || translation.phase === 'streaming';
   const busy = followUpBusy(followUpMessages);
   const [question, setQuestion] = useState('');
+  const [sourceDraft, setSourceDraft] = useState<string | null>(null);
+  useEffect(() => setSourceDraft(null), [sourceText]);
   const [backTranslationResults, setBackTranslationResults] = useState<
     ReadonlyMap<string, StoredBackTranslationResult>
   >(new Map());
@@ -865,7 +917,7 @@ export function TranslationResultPanel({
           </button>
         </aside>
       )}
-      <article className="nani-source-card">
+      <article className={sourceImageUrl ? 'nani-source-card has-image' : 'nani-source-card'}>
         {appliedInstructions.length > 0 && (
           <ul className="result-instruction-list" aria-label={t('result.instructions')}>
             {appliedInstructions.map((instruction, index) => (
@@ -892,7 +944,37 @@ export function TranslationResultPanel({
             ))}
           </ul>
         )}
-        <p>{sourceText}</p>
+        {sourceImageUrl && (
+          <img className="nani-source-image" src={sourceImageUrl} alt={t('result.sourceImage')} />
+        )}
+        {sourceDraft !== null && onEditSource ? (
+          <form
+            className="nani-source-editor"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!sourceDraft.trim()) return;
+              onEditSource(sourceDraft);
+              setSourceDraft(null);
+            }}
+          >
+            <textarea
+              aria-label={t('result.editSource')}
+              autoFocus
+              value={sourceDraft}
+              onChange={(event) => setSourceDraft(event.currentTarget.value)}
+            />
+            <div className="nani-source-editor-actions">
+              <button className="text-button" type="button" onClick={() => setSourceDraft(null)}>
+                {t('common.cancel')}
+              </button>
+              <button className="translate-button" type="submit" disabled={!sourceDraft.trim()}>
+                {t('main.translate')} <ArrowUp size={17} />
+              </button>
+            </div>
+          </form>
+        ) : (
+          <SourceText text={sourceText} collapsible={Boolean(sourceImageUrl)} />
+        )}
         <div className="nani-source-meta">
           <span>
             {directionValue?.sourceLanguage
@@ -905,6 +987,17 @@ export function TranslationResultPanel({
               ? formatLanguageName(directionValue.targetLanguage)
               : t('result.targetLanguage')}
           </span>
+          {onEditSource && sourceDraft === null && (
+            <button
+              className="nani-icon-button"
+              type="button"
+              aria-label={t('result.editSource')}
+              disabled={pending}
+              onClick={() => setSourceDraft(sourceText)}
+            >
+              <PenLine size={17} />
+            </button>
+          )}
           <CopyAction text={sourceText} />
         </div>
       </article>

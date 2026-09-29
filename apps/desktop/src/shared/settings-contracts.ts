@@ -1,7 +1,7 @@
 // Rendererは設定スナップショット到着前にもショートカットを表示する。
 // 永続化層と初期表示が同じ既定値を参照し、起動直後だけ表示が食い違わないようにする。
 export const DEFAULT_TRANSLATE_SHORTCUT = 'CommandOrControl+Shift+J';
-// Rendererと永続化層でスクリーンショット翻訳（ベータ）の初期キーを揃える。
+// Rendererと永続化層でスクリーンショット翻訳の初期キーを揃える。
 export const DEFAULT_SCREENSHOT_SHORTCUT = 'CommandOrControl+Shift+K';
 
 export const PROVIDER_KIND_VALUES = [
@@ -87,6 +87,12 @@ export function distinctTranslationTarget(
 
 export const TRANSLATION_STYLE_VALUES = ['literal', 'natural'] as const;
 export type TranslationStyle = (typeof TRANSLATION_STYLE_VALUES)[number];
+
+// 画像内の文字の読み取り方法。'system'はOS標準のOCR（Windows.Media.Ocr）で、
+// 画像を外部へ送らず、画像非対応のモデルしか設定していなくても使えるため既定にしている。
+// 'model'は設定中のAIモデルに画像を送って書き起こさせる（手書きや崩れた文字に強い）。
+export const IMAGE_TEXT_RECOGNITION_VALUES = ['system', 'model'] as const;
+export type ImageTextRecognition = (typeof IMAGE_TEXT_RECOGNITION_VALUES)[number];
 
 export const HISTORY_RETENTION_DAY_VALUES = [30, 90, 180, 365] as const;
 export type HistoryRetentionDays = (typeof HISTORY_RETENTION_DAY_VALUES)[number] | null;
@@ -546,6 +552,7 @@ export interface GeneralSettingsUpdate {
   readonly launchAtLogin?: boolean | undefined;
   readonly enterToSend?: boolean | undefined;
   readonly compactTranslation?: boolean | undefined;
+  readonly imageTextRecognition?: ImageTextRecognition | undefined;
   readonly developerMode?: boolean | undefined;
   readonly debugMode?: boolean | undefined;
   readonly translationStyle?: TranslationStyle | undefined;
@@ -560,11 +567,12 @@ export interface GeneralSettingsUpdate {
 
 export interface SettingsSnapshot {
   readonly shortcut: string;
-  /** スクリーンショット翻訳（ベータ）のグローバルショートカット。nullは無効。 */
+  /** スクリーンショット翻訳のグローバルショートカット。nullは無効。 */
   readonly screenshotShortcut: string | null;
   readonly launchAtLogin: boolean;
   readonly enterToSend: boolean;
   readonly compactTranslation: boolean;
+  readonly imageTextRecognition: ImageTextRecognition;
   readonly developerMode: boolean;
   readonly translationStyle: TranslationStyle;
   readonly startupSupported: boolean;

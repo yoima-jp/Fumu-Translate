@@ -21,13 +21,13 @@ const TRAY_LABELS: Readonly<Record<UiLocale, TrayMenuLabels>> = Object.freeze({
   en: Object.freeze({
     open: 'Open Fumu!',
     translateClipboard: 'Translate Clipboard',
-    translateScreenshot: 'Translate Screen (Beta)',
+    translateScreenshot: 'Translate Screen',
     quit: 'Quit',
   }),
   ja: Object.freeze({
     open: 'Fumu!を開く',
     translateClipboard: 'クリップボードを翻訳',
-    translateScreenshot: '画面を翻訳（ベータ）',
+    translateScreenshot: '画面を翻訳',
     quit: '終了',
   }),
 });

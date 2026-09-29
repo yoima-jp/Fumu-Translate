@@ -817,32 +817,6 @@ textarea {
   gap: 8px;
 }
 
-.image-source-editor {
-  padding: 16px 18px;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.image-source-editor textarea {
-  min-height: 140px;
-  padding: 10px 12px;
-  background: var(--nani-soft);
-  border: 1px solid var(--nani-line);
-  border-radius: 12px;
-  resize: vertical;
-}
-
-.image-source-editor textarea:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-}
-
-.image-source-editor-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
 .nani-composer-shell > header {
   display: flex;
   height: 48px;
@@ -924,46 +898,6 @@ textarea {
   border-radius: 8px;
   outline: 1px dashed color-mix(in srgb, var(--fumu-brand-action) 48%, transparent);
   outline-offset: 4px;
-}
-
-.image-reading-chip {
-  display: inline-flex;
-  min-height: 34px;
-  margin: 0 0 8px;
-  padding: 3px 5px 3px 4px;
-  align-items: center;
-  gap: 8px;
-  color: var(--nani-muted);
-  font-size: 11px;
-  background: var(--nani-soft);
-  border: 1px solid var(--nani-line);
-  border-radius: 10px;
-}
-
-.image-reading-chip > img {
-  width: 27px;
-  height: 27px;
-  object-fit: cover;
-  background: var(--nani-panel);
-  border-radius: 7px;
-}
-
-.image-reading-chip > button {
-  display: grid;
-  width: 25px;
-  height: 25px;
-  padding: 0;
-  place-items: center;
-  color: var(--nani-muted);
-  background: transparent;
-  border: 0;
-  border-radius: 7px;
-  cursor: pointer;
-}
-
-.image-reading-chip > button:hover {
-  color: var(--nani-ink);
-  background: var(--nani-panel);
 }
 
 .inline-context-editor {
@@ -1877,8 +1811,33 @@ textarea {
 .translation-mode-cards {
   display: grid;
   margin-top: 38px;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 22px;
+}
+
+/* どの画面でも画像をドロップできることを示す。ドロップ自体はdocumentで受けるため、
+   overlayはpointer操作を奪わない。 */
+.image-drop-overlay {
+  position: fixed;
+  z-index: 60;
+  display: flex;
+  inset: 10px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--fumu-accent);
+  font-size: 14px;
+  font-weight: 700;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--nani-canvas) 82%, transparent);
+  border: 2px dashed var(--fumu-accent);
+  border-radius: 22px;
+}
+
+/* 画像の読み取り中は入力欄をunmountせずに隠す。classのdisplay指定がhidden属性より優先されるため明示する。 */
+.nani-composer-shell[hidden] {
+  display: none;
 }
 
 .mode-card {
@@ -2014,6 +1973,58 @@ textarea {
 }
 .nani-source-card .nani-icon-button {
   margin-left: auto;
+}
+/* 編集とコピーを並べたときは、先頭のボタンだけで右寄せする。 */
+.nani-source-card .nani-icon-button + .nani-icon-button {
+  margin-left: 0;
+}
+.nani-source-image {
+  display: block;
+  max-width: min(100%, 220px);
+  max-height: 140px;
+  margin-bottom: 14px;
+  object-fit: contain;
+  border: 1px solid var(--nani-line);
+  border-radius: 12px;
+}
+.nani-source-text {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.nani-source-text > p {
+  flex: 1;
+  min-width: 0;
+}
+.nani-source-text > p.collapsed {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.nani-source-editor textarea {
+  width: 100%;
+  min-height: 120px;
+  padding: 10px 12px;
+  color: var(--nani-ink);
+  font: inherit;
+  font-size: 16px;
+  line-height: 1.8;
+  background: var(--nani-soft);
+  border: 1px solid var(--nani-line);
+  border-radius: 12px;
+  resize: vertical;
+}
+.nani-source-editor textarea:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.nani-source-editor-actions {
+  display: flex;
+  margin-top: 10px;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
 }
 .translation-arrived {
   display: flex;
@@ -2464,20 +2475,6 @@ textarea {
 .settings-toggle.disabled {
   cursor: not-allowed;
   opacity: 0.55;
-}
-
-.settings-line .beta-badge {
-  display: inline-flex;
-  margin-left: 7px;
-  padding: 2px 6px;
-  align-items: center;
-  color: var(--fumu-accent);
-  font-size: 9px;
-  font-weight: 700;
-  line-height: 1.2;
-  background: color-mix(in srgb, var(--fumu-accent) 10%, var(--nani-panel));
-  border-radius: 999px;
-  vertical-align: 1px;
 }
 
 .compact-translation-setting {

@@ -5,6 +5,8 @@ import log from 'electron-log/main';
 import { resolveEnvironmentUiLocale, resolveUiLocale } from '@fumu/i18n';
 import { MAX_TRANSLATION_SOURCE_CODE_POINTS } from '@fumu/translation-core';
 import { AppController } from './app-controller';
+import { ImageTextRecognizer } from './images/image-text-recognizer';
+import { recognizeWithSystemOcr } from './images/system-ocr';
 import { registerIpcHandlers } from './ipc';
 import { trustedRendererUrl } from './ipc-sender-policy';
 import { isAutostartInvocation } from './launch-mode';
@@ -164,7 +166,12 @@ async function startApplication(): Promise<void> {
     hotkey: new ElectronHotkeyService(),
     screenshotHotkey: new ElectronHotkeyService(),
     screenRegionCapture: regionCapture,
-    imageTextExtraction: registry,
+    imageTextExtraction: new ImageTextRecognizer({
+      mode: () => settings.snapshot.imageTextRecognition,
+      systemOcr: recognizeWithSystemOcr,
+      model: registry,
+      logger: log.scope('image-text'),
+    }),
     selection: new SelectionHookService({ maxCodePoints: MAX_TRANSLATION_SOURCE_CODE_POINTS }),
     translation: registry,
     followUp: registry,
@@ -202,7 +209,7 @@ async function startApplication(): Promise<void> {
   tray.setScreenshotTranslationEnabled(settings.snapshot.screenshotShortcut !== null);
   tray.initialize();
   trayManager = tray;
-  // Trayの表示言語とベータ項目の有効状態を追従させる。AppControllerの購読とは分け、終了時に解除する。
+  // Trayの表示言語とスクリーンショット翻訳項目の有効状態を追従させる。AppControllerの購読とは分け、終了時に解除する。
   removeTraySettingsSubscription = settings.subscribe((snapshot) => {
     trayManager?.setLocale(resolveUiLocale(snapshot.nativeLanguage));
     trayManager?.setScreenshotTranslationEnabled(snapshot.screenshotShortcut !== null);

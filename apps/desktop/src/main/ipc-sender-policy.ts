@@ -1,6 +1,6 @@
 import { pathToFileURL } from 'node:url';
 
-// 'screen-capture' はスクリーンショット翻訳（ベータ）の範囲選択overlay。範囲の返却以外は許可しない。
+// 'screen-capture' はスクリーンショット翻訳の範囲選択overlay。範囲の返却と設定の読み取り以外は許可しない。
 export type RendererKind = 'main' | 'popup' | 'screen-capture';
 export type RendererEntryUrls = Readonly<Record<RendererKind, string>>;
 

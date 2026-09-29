@@ -25,6 +25,7 @@ import {
 } from '../../../shared/settings-contracts';
 import type {
   GeneralSettingsUpdate,
+  ImageTextRecognition,
   SettingsSnapshot,
   WritingStyle,
 } from '../../../shared/settings-contracts';
@@ -453,10 +454,7 @@ function ShortcutSettings({ settings }: { settings: SettingsSnapshot }) {
       </label>
       <label className="settings-line settings-toggle screenshot-shortcut-toggle">
         <span>
-          <strong>
-            {t('settings.screenshotTranslation')}
-            <span className="beta-badge">{t('common.beta')}</span>
-          </strong>
+          <strong>{t('settings.screenshotTranslation')}</strong>
           <small>{t('settings.screenshotTranslationDetail')}</small>
         </span>
         <input
@@ -611,6 +609,25 @@ function GeneralSettings({
                   },
             );
           }}
+        />
+      </div>
+      <div className="settings-line">
+        <span>
+          <strong>{t('settings.imageTextRecognition')}</strong>
+          <small>
+            {settings.imageTextRecognition === 'system'
+              ? t('settings.imageTextRecognitionSystemDetail')
+              : t('settings.imageTextRecognitionModelDetail')}
+          </small>
+        </span>
+        <SoftSelect<ImageTextRecognition>
+          label={t('settings.imageTextRecognition')}
+          value={settings.imageTextRecognition}
+          options={[
+            { value: 'system', label: t('settings.imageTextRecognitionSystem') },
+            { value: 'model', label: t('settings.imageTextRecognitionModel') },
+          ]}
+          onChange={(imageTextRecognition) => update({ imageTextRecognition })}
         />
       </div>
       <label

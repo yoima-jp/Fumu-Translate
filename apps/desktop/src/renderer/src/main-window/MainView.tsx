@@ -2,6 +2,7 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
   ArrowUp,
   ChevronRight,
+  Image as ImageIcon,
   MessagesSquare,
   PenLine,
   Settings as SettingsIcon,
@@ -24,6 +25,7 @@ import {
   type WritingStyle,
 } from '../../../shared/settings-contracts';
 import { TranslationResultPanel as SharedTranslationResultPanel } from '../TranslationResultPanel';
+import { FumuMascot } from '../FumuMascot';
 import { IdleMascot } from '../IdleMascot';
 import { Onboarding } from '../Onboarding';
 import { SettingsView, SoftSelect } from './SettingsView';
@@ -342,6 +344,8 @@ function Composer({
   onConversationRoutingChange,
   dismissedTranslationRequestId,
   initialConversation,
+  pendingImage,
+  onPendingImageConsumed,
 }: {
   settings: SettingsSnapshot | null;
   status: DesktopStatus;
@@ -354,6 +358,9 @@ function Composer({
   onConversationRoutingChange(mode: ComposerMode, direction: ConversationDirection): void;
   dismissedTranslationRequestId: string | null;
   initialConversation: ResumableConversation | null;
+  /** 入力欄以外（どの画面でも）に貼り付け・ドロップされた画像。受け取ったら一度だけ読み取る。 */
+  pendingImage: { readonly id: number; readonly file: File } | null;
+  onPendingImageConsumed(): void;
 }) {
   const { t } = useI18n();
   const initialConversationLastTurn = initialConversation?.turns.at(-1) ?? null;
@@ -395,11 +402,20 @@ function Composer({
   const [drafting, setDrafting] = useState(initialConversation === null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [imageReadingPreview, setImageReadingPreview] = useState<string | null>(null);
+  // 画像を受け取った時点で入力画面から結果画面へ切り替え、読み取り→翻訳の進行を見せる。
+  // 'translating'は書き起こし文を送信してから、mainが翻訳状態を返すまでの短い間を埋めるための段階。
+  const [imageStage, setImageStage] = useState<
+    | { readonly previewUrl: string; readonly phase: 'reading' }
+    | { readonly previewUrl: string; readonly phase: 'translating'; readonly text: string }
+    | null
+  >(null);
+  // 結果画面の原文カードに出す元画像。原文を直して翻訳し直しても同じ画像の翻訳として表示を保つため、
+  // その画像から翻訳した原文の一覧と組にして持ち、別の翻訳結果には画像を出さない。
+  const [resultImage, setResultImage] = useState<{
+    readonly url: string;
+    readonly sourceTexts: readonly string[];
+  } | null>(null);
   const [imageUnsupportedModel, setImageUnsupportedModel] = useState(false);
-  const [imageTranslationSource, setImageTranslationSource] = useState(false);
-  const [imageSourceEditing, setImageSourceEditing] = useState(false);
-  const [imageSourceDraft, setImageSourceDraft] = useState('');
   const [quickSettingsOpen, setQuickSettingsOpen] = useState(false);
   const [quickSettingsRendered, setQuickSettingsRendered] = useState(false);
   const quickSettingsRef = useRef<HTMLDivElement>(null);
@@ -410,7 +426,9 @@ function Composer({
   const editorRef = useRef<InlineContextEditorHandle>(null);
   const imageRequestIdRef = useRef(0);
   const imagePreviewUrlRef = useRef<string | null>(null);
+  const resultImageUrlRef = useRef<string | null>(null);
   const imageExtractionActiveRef = useRef(false);
+  const imageFileInputRef = useRef<HTMLInputElement>(null);
   const quickSettingsId = useId();
   const conversationReady =
     mode !== 'conversation' ||
@@ -546,15 +564,25 @@ function Composer({
   };
   const submitRef = useRef(submit);
   submitRef.current = submit;
-  const cancelImageReading = (): void => {
-    imageRequestIdRef.current += 1;
-    imageExtractionActiveRef.current = false;
-    void window.fumu.cancelImageTextExtraction().catch(() => undefined);
+  const clearImageStage = (): void => {
     if (imagePreviewUrlRef.current !== null) {
       URL.revokeObjectURL(imagePreviewUrlRef.current);
       imagePreviewUrlRef.current = null;
     }
-    setImageReadingPreview(null);
+    setImageStage(null);
+  };
+  const clearResultImage = (): void => {
+    if (resultImageUrlRef.current !== null) {
+      URL.revokeObjectURL(resultImageUrlRef.current);
+      resultImageUrlRef.current = null;
+    }
+    setResultImage(null);
+  };
+  const cancelImageReading = (): void => {
+    imageRequestIdRef.current += 1;
+    imageExtractionActiveRef.current = false;
+    void window.fumu.cancelImageTextExtraction().catch(() => undefined);
+    clearImageStage();
   };
   const readImage = (file: File): void => {
     // 翻訳の開始中に読み取りを始めると、開始完了で入力欄が閉じて書き起こし文が翻訳されない。
@@ -564,11 +592,7 @@ function Composer({
     const cancelPrevious = imageExtractionActiveRef.current;
     imageExtractionActiveRef.current = false;
     const requestId = ++imageRequestIdRef.current;
-    if (imagePreviewUrlRef.current !== null) {
-      URL.revokeObjectURL(imagePreviewUrlRef.current);
-      imagePreviewUrlRef.current = null;
-    }
-    setImageReadingPreview(null);
+    clearImageStage();
     if (file.size > MAX_IMAGE_INPUT_BYTES) {
       if (cancelPrevious) {
         void window.fumu.cancelImageTextExtraction().catch(() => undefined);
@@ -579,10 +603,11 @@ function Composer({
 
     const previewUrl = URL.createObjectURL(file);
     imagePreviewUrlRef.current = previewUrl;
-    setImageReadingPreview(previewUrl);
+    setImageStage({ previewUrl, phase: 'reading' });
 
     void (async () => {
       let extracting = false;
+      let handedOffToTranslation = false;
       try {
         if (cancelPrevious) {
           await window.fumu.cancelImageTextExtraction().catch(() => undefined);
@@ -599,16 +624,15 @@ function Composer({
               setSubmitError(t('main.imageNoText'));
               break;
             }
-            const nextValue = editorRef.current?.appendText(outcome.text);
-            if (nextValue === null || nextValue === undefined) {
-              setSubmitError(t('main.imageTextLimit'));
-            } else {
-              setImageTranslationSource(true);
-              setImageSourceEditing(false);
-              imageExtractionActiveRef.current = false;
-              // 文脈・文体・翻訳中状態を既存の翻訳開始処理と共有する。
-              submitRef.current({ text: nextValue.text });
-            }
+            // 画像は入力途中の文と混ぜず、それ単体の新しい翻訳として扱う。
+            const sourceText = Array.from(outcome.text)
+              .slice(0, MAX_TRANSLATION_SOURCE_CODE_POINTS)
+              .join('');
+            imageExtractionActiveRef.current = false;
+            handedOffToTranslation = true;
+            setImageStage({ previewUrl, phase: 'translating', text: sourceText });
+            // 文脈・文体・翻訳中状態を既存の翻訳開始処理と共有する。
+            submitRef.current({ text: sourceText });
             break;
           }
           case 'no-text':
@@ -641,15 +665,34 @@ function Composer({
       } finally {
         if (requestId === imageRequestIdRef.current) {
           imageExtractionActiveRef.current = false;
-          if (imagePreviewUrlRef.current !== null) {
-            URL.revokeObjectURL(imagePreviewUrlRef.current);
-            imagePreviewUrlRef.current = null;
-          }
-          setImageReadingPreview(null);
+          // 翻訳へ引き渡した場合は、結果画面へ切り替わるまで読み取り表示を残す（下のeffectで片付ける）。
+          if (!handedOffToTranslation) clearImageStage();
         }
       }
     })();
   };
+  useEffect(() => {
+    if (imageStage?.phase !== 'translating') return;
+    if (!drafting) {
+      // 結果画面へ切り替わったら、読み取り中の画像を結果の原文カードへ引き継ぐ（revokeしない）。
+      if (resultImageUrlRef.current !== null) URL.revokeObjectURL(resultImageUrlRef.current);
+      resultImageUrlRef.current = imageStage.previewUrl;
+      imagePreviewUrlRef.current = null;
+      setResultImage({ url: imageStage.previewUrl, sourceTexts: [imageStage.text] });
+      setImageStage(null);
+    } else if (!submitting) {
+      // 翻訳を開始できなかった場合（モデル未設定など）は、書き起こし文の入った入力欄へ戻す。
+      editorRef.current?.appendText(imageStage.text);
+      clearImageStage();
+    }
+  }, [imageStage, drafting, submitting]);
+  useEffect(() => {
+    if (pendingImage === null) return;
+    // 履歴を開いて戻るなどでComposerが再マウントされても同じ画像を読み直さないよう、すぐ消費済みにする。
+    // readImageは描画ごとに作り直されるため依存に含めない。
+    readImage(pendingImage.file);
+    onPendingImageConsumed();
+  }, [pendingImage?.id]);
   useEffect(
     () => () => {
       imageRequestIdRef.current += 1;
@@ -660,6 +703,10 @@ function Composer({
       if (imagePreviewUrlRef.current !== null) {
         URL.revokeObjectURL(imagePreviewUrlRef.current);
         imagePreviewUrlRef.current = null;
+      }
+      if (resultImageUrlRef.current !== null) {
+        URL.revokeObjectURL(resultImageUrlRef.current);
+        resultImageUrlRef.current = null;
       }
     },
     [],
@@ -809,24 +856,12 @@ function Composer({
   const showingStandardResult =
     state.phase === 'selection' && !drafting && !showingConversationResult;
   const showingResult = showingConversationResult || showingStandardResult;
+  const showingImageStage = imageStage !== null && drafting;
   return (
     <div className="translate-workspace composer-workspace">
       {showingResult ? (
         <>
           <div className="nani-result-actions">
-            {showingStandardResult && imageTranslationSource && !imageSourceEditing && (
-              <button
-                className="nani-new-bar"
-                type="button"
-                onClick={() => {
-                  setImageSourceDraft(text);
-                  setImageSourceEditing(true);
-                }}
-              >
-                <PenLine size={19} />
-                <span>{t('main.editSource')}</span>
-              </button>
-            )}
             <button
               className="nani-new-bar"
               type="button"
@@ -840,9 +875,7 @@ function Composer({
                 setConversationSessionId(crypto.randomUUID());
                 setActiveConversationSubmission(null);
                 setResumedConversationTurn(null);
-                setImageTranslationSource(false);
-                setImageSourceEditing(false);
-                setImageSourceDraft('');
+                clearResultImage();
                 submittingRef.current = false;
                 setSubmitting(false);
                 setSubmitError(null);
@@ -854,284 +887,275 @@ function Composer({
               <PenLine size={19} />
             </button>
           </div>
-          {showingStandardResult && imageTranslationSource && imageSourceEditing && (
-            <form
-              className="conversation-reply-composer image-source-editor"
-              onSubmit={(event) => {
-                event.preventDefault();
-                setText(imageSourceDraft);
-                setImageSourceEditing(false);
-                submitRef.current({ text: imageSourceDraft });
-              }}
-            >
-              <textarea
-                aria-label={t('main.textLabel')}
-                autoFocus
-                value={imageSourceDraft}
-                disabled={submitting}
-                onChange={(event) =>
-                  setImageSourceDraft(
-                    Array.from(event.currentTarget.value)
-                      .slice(0, MAX_TRANSLATION_SOURCE_CODE_POINTS)
-                      .join(''),
-                  )
-                }
-              />
-              <div className="image-source-editor-actions">
-                <button
-                  className="text-button"
-                  type="button"
-                  disabled={submitting}
-                  onClick={() => setImageSourceEditing(false)}
-                >
-                  {t('common.cancel')}
-                </button>
-                <button
-                  className="translate-button"
-                  type="submit"
-                  disabled={
-                    submitting ||
-                    !imageSourceDraft.trim() ||
-                    !status.translationConfigured ||
-                    !conversationReady
-                  }
-                  aria-busy={submitting}
-                >
-                  {t('main.translate')} <ArrowUp size={17} />
-                </button>
-              </div>
-            </form>
-          )}
         </>
       ) : (
-        <section
-          className={
-            styleAdjustEnabled ? 'nani-composer-shell style-adjust-enabled' : 'nani-composer-shell'
-          }
-        >
-          <header>
-            <button
-              className={
-                styleAdjustEnabled ? 'composer-style-toggle active' : 'composer-style-toggle'
-              }
-              type="button"
-              aria-pressed={styleAdjustEnabled}
-              onClick={toggleStyleAdjustment}
-            >
-              <span className="toggle-dot" aria-hidden="true" />
-              <span>{t('main.adjustStyle')}</span>
-            </button>
-            {(mode !== 'conversation' || conversationDirection === 'outgoing') && (
-              <TargetLanguageSelect
-                className="composer-language"
-                value={targetLanguage}
-                onChange={onTargetLanguageChange}
-              />
-            )}
-          </header>
-          {styleAdjustRendered && settings !== null && (
-            <div
-              className={
-                styleAdjustEnabled ? 'composer-style-reveal' : 'composer-style-reveal closing'
-              }
-            >
+        <>
+          {showingImageStage && (
+            <>
+              <div className="nani-result-actions">
+                <button className="nani-new-bar" type="button" onClick={cancelImageReading}>
+                  <X size={19} />
+                  <span>{t('common.cancel')}</span>
+                </button>
+              </div>
+              <article className="nani-source-card has-image" aria-busy="true">
+                <img
+                  className="nani-source-image"
+                  src={imageStage.previewUrl}
+                  alt={t('result.sourceImage')}
+                />
+                <div className="nani-loading-lines" aria-hidden="true">
+                  <span />
+                  <span />
+                </div>
+              </article>
+              <div className="translation-arrived">
+                <span className="mini-brand">
+                  <FumuMascot animated />
+                </span>
+                <span role="status">
+                  {imageStage.phase === 'reading'
+                    ? t('main.imageReading')
+                    : t('main.imageTranslating')}
+                </span>
+              </div>
+              <article className="nani-result-card" aria-busy="true">
+                <div className="nani-loading-lines" aria-hidden="true">
+                  <span />
+                  <span />
+                </div>
+              </article>
+            </>
+          )}
+          {/* 読み取り中も入力欄はunmountせず隠すだけにする。書き起こし文は入力欄へ追記してから
+            送信するため、unmountすると入力途中の文や文脈指定が失われる。 */}
+          <section
+            hidden={showingImageStage}
+            className={
+              styleAdjustEnabled
+                ? 'nani-composer-shell style-adjust-enabled'
+                : 'nani-composer-shell'
+            }
+          >
+            <header>
+              <button
+                className={
+                  styleAdjustEnabled ? 'composer-style-toggle active' : 'composer-style-toggle'
+                }
+                type="button"
+                aria-pressed={styleAdjustEnabled}
+                onClick={toggleStyleAdjustment}
+              >
+                <span className="toggle-dot" aria-hidden="true" />
+                <span>{t('main.adjustStyle')}</span>
+              </button>
+              {(mode !== 'conversation' || conversationDirection === 'outgoing') && (
+                <TargetLanguageSelect
+                  className="composer-language"
+                  value={targetLanguage}
+                  onChange={onTargetLanguageChange}
+                />
+              )}
+            </header>
+            {styleAdjustRendered && settings !== null && (
               <div
                 className={
-                  styleAdjustEnabled ? 'composer-style-picker' : 'composer-style-picker closing'
+                  styleAdjustEnabled ? 'composer-style-reveal' : 'composer-style-reveal closing'
                 }
-                aria-label={t('main.style')}
               >
-                {composerStyles.map((style) => (
-                  <button
-                    className={selectedWritingStyleIds.includes(style.id) ? 'selected' : undefined}
-                    type="button"
-                    key={style.id}
-                    aria-pressed={selectedWritingStyleIds.includes(style.id)}
-                    onClick={() => selectWritingStyle(style)}
-                  >
-                    <span aria-hidden="true">{style.icon ?? '✨'}</span>
-                    {style.name}
-                  </button>
-                ))}
-                <button
-                  className={
-                    additionalInstructionOpen || additionalInstructionValue.length > 0
-                      ? 'selected additional'
-                      : 'additional'
-                  }
-                  type="button"
-                  aria-pressed={additionalInstructionOpen || additionalInstructionValue.length > 0}
-                  onClick={openAdditionalInstruction}
-                >
-                  <span aria-hidden="true">＋</span>
-                  {t('main.additionalInstruction')}
-                </button>
-                {additionalInstructionOpen && (
-                  <div className="composer-additional-instruction">
-                    <textarea
-                      aria-label={t('main.additionalInstruction')}
-                      value={additionalInstruction}
-                      maxLength={MAX_WRITING_STYLE_INSTRUCTION_LENGTH}
-                      placeholder={t('main.additionalInstructionPlaceholder')}
-                      onChange={(event) => {
-                        setAdditionalInstruction(event.currentTarget.value);
-                        setStyleSaveError(null);
-                      }}
-                    />
-                    <div className="composer-additional-actions">
-                      {saveStyleOpen ? (
-                        <>
-                          <input
-                            aria-label={t('main.styleNameAria')}
-                            value={saveStyleName}
-                            maxLength={MAX_WRITING_STYLE_NAME_LENGTH}
-                            placeholder={t('main.styleNamePlaceholder')}
-                            onChange={(event) => setSaveStyleName(event.currentTarget.value)}
-                          />
-                          <button type="button" onClick={saveAdditionalInstruction}>
-                            {t('common.save')}
-                          </button>
-                        </>
-                      ) : (
-                        <button type="button" onClick={() => setSaveStyleOpen(true)}>
-                          {t('main.saveInstruction')}
-                        </button>
-                      )}
-                    </div>
-                    {styleSaveError && <p role="alert">{styleSaveError}</p>}
-                  </div>
-                )}
-                <button
-                  className="composer-style-settings"
-                  type="button"
-                  aria-label={t('main.manageStyles')}
-                  onClick={openWritingStyles}
-                >
-                  <SettingsIcon size={18} />
-                </button>
-              </div>
-            </div>
-          )}
-          <div className="nani-composer">
-            {mode === 'conversation' && (
-              <div className="conversation-controls">
                 <div
-                  className={`conversation-tabs ${conversationDirection}`}
-                  role="tablist"
-                  aria-label={t('main.conversationDirection')}
+                  className={
+                    styleAdjustEnabled ? 'composer-style-picker' : 'composer-style-picker closing'
+                  }
+                  aria-label={t('main.style')}
                 >
+                  {composerStyles.map((style) => (
+                    <button
+                      className={
+                        selectedWritingStyleIds.includes(style.id) ? 'selected' : undefined
+                      }
+                      type="button"
+                      key={style.id}
+                      aria-pressed={selectedWritingStyleIds.includes(style.id)}
+                      onClick={() => selectWritingStyle(style)}
+                    >
+                      <span aria-hidden="true">{style.icon ?? '✨'}</span>
+                      {style.name}
+                    </button>
+                  ))}
                   <button
-                    className={conversationDirection === 'incoming' ? 'active' : undefined}
+                    className={
+                      additionalInstructionOpen || additionalInstructionValue.length > 0
+                        ? 'selected additional'
+                        : 'additional'
+                    }
                     type="button"
-                    role="tab"
-                    aria-selected={conversationDirection === 'incoming'}
-                    onClick={() => {
-                      setConversationDirection('incoming');
-                      onConversationRoutingChange('conversation', 'incoming');
-                    }}
+                    aria-pressed={
+                      additionalInstructionOpen || additionalInstructionValue.length > 0
+                    }
+                    onClick={openAdditionalInstruction}
                   >
-                    {t('main.incoming')}
+                    <span aria-hidden="true">＋</span>
+                    {t('main.additionalInstruction')}
                   </button>
+                  {additionalInstructionOpen && (
+                    <div className="composer-additional-instruction">
+                      <textarea
+                        aria-label={t('main.additionalInstruction')}
+                        value={additionalInstruction}
+                        maxLength={MAX_WRITING_STYLE_INSTRUCTION_LENGTH}
+                        placeholder={t('main.additionalInstructionPlaceholder')}
+                        onChange={(event) => {
+                          setAdditionalInstruction(event.currentTarget.value);
+                          setStyleSaveError(null);
+                        }}
+                      />
+                      <div className="composer-additional-actions">
+                        {saveStyleOpen ? (
+                          <>
+                            <input
+                              aria-label={t('main.styleNameAria')}
+                              value={saveStyleName}
+                              maxLength={MAX_WRITING_STYLE_NAME_LENGTH}
+                              placeholder={t('main.styleNamePlaceholder')}
+                              onChange={(event) => setSaveStyleName(event.currentTarget.value)}
+                            />
+                            <button type="button" onClick={saveAdditionalInstruction}>
+                              {t('common.save')}
+                            </button>
+                          </>
+                        ) : (
+                          <button type="button" onClick={() => setSaveStyleOpen(true)}>
+                            {t('main.saveInstruction')}
+                          </button>
+                        )}
+                      </div>
+                      {styleSaveError && <p role="alert">{styleSaveError}</p>}
+                    </div>
+                  )}
                   <button
-                    className={conversationDirection === 'outgoing' ? 'active' : undefined}
+                    className="composer-style-settings"
                     type="button"
-                    role="tab"
-                    aria-selected={conversationDirection === 'outgoing'}
-                    onClick={() => {
-                      setConversationDirection('outgoing');
-                      onConversationRoutingChange('conversation', 'outgoing');
-                    }}
+                    aria-label={t('main.manageStyles')}
+                    onClick={openWritingStyles}
                   >
-                    {t('main.outgoing')}
+                    <SettingsIcon size={18} />
                   </button>
                 </div>
-                {conversationDirection === 'incoming' && settings?.nativeLanguage == null && (
-                  <button
-                    className="conversation-language-required"
-                    type="button"
-                    onClick={openSettings}
+              </div>
+            )}
+            <div className="nani-composer">
+              {mode === 'conversation' && (
+                <div className="conversation-controls">
+                  <div
+                    className={`conversation-tabs ${conversationDirection}`}
+                    role="tablist"
+                    aria-label={t('main.conversationDirection')}
                   >
-                    {t('main.setNativeLanguage')}
+                    <button
+                      className={conversationDirection === 'incoming' ? 'active' : undefined}
+                      type="button"
+                      role="tab"
+                      aria-selected={conversationDirection === 'incoming'}
+                      onClick={() => {
+                        setConversationDirection('incoming');
+                        onConversationRoutingChange('conversation', 'incoming');
+                      }}
+                    >
+                      {t('main.incoming')}
+                    </button>
+                    <button
+                      className={conversationDirection === 'outgoing' ? 'active' : undefined}
+                      type="button"
+                      role="tab"
+                      aria-selected={conversationDirection === 'outgoing'}
+                      onClick={() => {
+                        setConversationDirection('outgoing');
+                        onConversationRoutingChange('conversation', 'outgoing');
+                      }}
+                    >
+                      {t('main.outgoing')}
+                    </button>
+                  </div>
+                  {conversationDirection === 'incoming' && settings?.nativeLanguage == null && (
+                    <button
+                      className="conversation-language-required"
+                      type="button"
+                      onClick={openSettings}
+                    >
+                      {t('main.setNativeLanguage')}
+                    </button>
+                  )}
+                </div>
+              )}
+              <InlineContextEditor
+                ref={editorRef}
+                label={mode === 'conversation' ? t('main.messageLabel') : t('main.textLabel')}
+                placeholder={
+                  mode === 'conversation' ? t('main.messagePlaceholder') : t('main.textPlaceholder')
+                }
+                submitOnEnter={settings?.enterToSend === true}
+                onImageFile={readImage}
+                onChange={(value) => {
+                  setText(value.text);
+                  setInlineContexts(value.inlineContexts);
+                }}
+                onSubmit={submit}
+              />
+              <footer>
+                <div className="quick-settings-anchor" ref={quickSettingsRef}>
+                  <button
+                    ref={quickSettingsButtonRef}
+                    className="nani-icon-button"
+                    type="button"
+                    aria-label={t('quick.title')}
+                    aria-haspopup="dialog"
+                    aria-controls={quickSettingsRendered ? quickSettingsId : undefined}
+                    aria-expanded={quickSettingsOpen}
+                    onClick={() => {
+                      if (settings === null) {
+                        openSettings();
+                        return;
+                      }
+                      if (quickSettingsOpen) {
+                        closeQuickSettings();
+                      } else {
+                        showQuickSettings();
+                      }
+                    }}
+                  >
+                    <SlidersHorizontal size={19} />
                   </button>
-                )}
-              </div>
-            )}
-            {imageReadingPreview !== null && (
-              <div className="image-reading-chip" role="status">
-                <img src={imageReadingPreview} alt="" />
-                <span>{t('main.imageReading')}</span>
-                <button type="button" aria-label={t('common.cancel')} onClick={cancelImageReading}>
-                  <X size={15} aria-hidden="true" />
-                </button>
-              </div>
-            )}
-            <InlineContextEditor
-              ref={editorRef}
-              label={mode === 'conversation' ? t('main.messageLabel') : t('main.textLabel')}
-              placeholder={
-                mode === 'conversation' ? t('main.messagePlaceholder') : t('main.textPlaceholder')
-              }
-              submitOnEnter={settings?.enterToSend === true}
-              onImageFile={readImage}
-              onChange={(value) => {
-                setText(value.text);
-                setInlineContexts(value.inlineContexts);
-              }}
-              onSubmit={submit}
-            />
-            <footer>
-              <div className="quick-settings-anchor" ref={quickSettingsRef}>
-                <button
-                  ref={quickSettingsButtonRef}
-                  className="nani-icon-button"
-                  type="button"
-                  aria-label={t('quick.title')}
-                  aria-haspopup="dialog"
-                  aria-controls={quickSettingsRendered ? quickSettingsId : undefined}
-                  aria-expanded={quickSettingsOpen}
-                  onClick={() => {
-                    if (settings === null) {
-                      openSettings();
-                      return;
+                  {quickSettingsRendered && settings && (
+                    <QuickSettingsPanel
+                      settings={settings}
+                      id={quickSettingsId}
+                      closing={!quickSettingsOpen}
+                      onOpenSettings={openSettings}
+                      onClose={closeQuickSettings}
+                    />
+                  )}
+                </div>
+                <div>
+                  <button
+                    className="translate-button"
+                    type="button"
+                    disabled={
+                      submitting ||
+                      !text.trim() ||
+                      !status.translationConfigured ||
+                      !conversationReady
                     }
-                    if (quickSettingsOpen) {
-                      closeQuickSettings();
-                    } else {
-                      showQuickSettings();
-                    }
-                  }}
-                >
-                  <SlidersHorizontal size={19} />
-                </button>
-                {quickSettingsRendered && settings && (
-                  <QuickSettingsPanel
-                    settings={settings}
-                    id={quickSettingsId}
-                    closing={!quickSettingsOpen}
-                    onOpenSettings={openSettings}
-                    onClose={closeQuickSettings}
-                  />
-                )}
-              </div>
-              <div>
-                <button
-                  className="translate-button"
-                  type="button"
-                  disabled={
-                    submitting ||
-                    !text.trim() ||
-                    !status.translationConfigured ||
-                    !conversationReady
-                  }
-                  aria-busy={submitting}
-                  onClick={() => submit()}
-                >
-                  {t('main.translate')} <ArrowUp size={17} />
-                </button>
-              </div>
-            </footer>
-          </div>
-        </section>
+                    aria-busy={submitting}
+                    onClick={() => submit()}
+                  >
+                    {t('main.translate')} <ArrowUp size={17} />
+                  </button>
+                </div>
+              </footer>
+            </div>
+          </section>
+        </>
       )}
       {submitError && (
         <p
@@ -1158,13 +1182,50 @@ function Composer({
       ) : showingStandardResult && state.phase === 'selection' ? (
         <SharedTranslationResultPanel
           sourceText={state.selection.text}
+          sourceImageUrl={
+            resultImage !== null && resultImage.sourceTexts.includes(state.selection.text)
+              ? resultImage.url
+              : null
+          }
+          onEditSource={(editedText) => {
+            // 画像から読んだ原文を直した場合も、同じ画像の翻訳として画像表示を続ける。
+            setResultImage((current) =>
+              current !== null && current.sourceTexts.includes(state.selection.text)
+                ? { ...current, sourceTexts: [...current.sourceTexts, editedText] }
+                : current,
+            );
+            submitRef.current({ text: editedText });
+          }}
           translation={state.translation}
           followUpMessages={state.followUpMessages}
           appliedInstructions={resultInstructions}
         />
       ) : null}
-      {!showingResult && (
+      {!showingResult && !showingImageStage && (
         <div className="translation-mode-cards">
+          <button
+            className="mode-card"
+            type="button"
+            onClick={() => imageFileInputRef.current?.click()}
+          >
+            <ImageIcon size={23} />
+            <span>
+              <strong>{t('main.imageTitle')}</strong>
+              <small>{t('main.imageDetail')}</small>
+            </span>
+          </button>
+          <input
+            ref={imageFileInputRef}
+            type="file"
+            accept="image/*"
+            hidden
+            onChange={(event) => {
+              const file = event.currentTarget.files?.[0];
+              // 同じ画像を続けて選び直せるよう、選択値は毎回空に戻す。
+              event.currentTarget.value = '';
+              if (file !== undefined) readImage(file);
+            }}
+          />
           <button
             className={mode === 'conversation' ? 'mode-card selected' : 'mode-card'}
             type="button"
@@ -1276,6 +1337,11 @@ export function MainView(): React.JSX.Element {
     readonly direction: ConversationDirection;
   }>({ mode: 'text', direction: 'incoming' });
   const [onboardingRevealing, setOnboardingRevealing] = useState(false);
+  const [pendingImage, setPendingImage] = useState<{
+    readonly id: number;
+    readonly file: File;
+  } | null>(null);
+  const [imageDragActive, setImageDragActive] = useState(false);
   const modalRef = useRef<HTMLDivElement>(null);
   const logoTargetRef = useRef<HTMLButtonElement>(null);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
@@ -1300,6 +1366,68 @@ export function MainView(): React.JSX.Element {
     setComposerRouting({ mode: 'text', direction: 'incoming' });
     setComposerKey((value) => value + 1);
   };
+  // どの画面にいても、画像の貼り付け・ドロップで新しい画像翻訳を始める。
+  // 入力欄は自身で画像を受け取る（入力中の文脈や文体を保つため）ので、処理済みの操作は扱わない。
+  const imageIntakeBlockedRef = useRef(false);
+  imageIntakeBlockedRef.current = settingsRendered || onboardingActive;
+  const startImageTranslationRef = useRef<(file: File) => void>(() => undefined);
+  startImageTranslationRef.current = (file) => {
+    goHome();
+    setPendingImage((current) => ({ id: (current?.id ?? 0) + 1, file }));
+  };
+  useEffect(() => {
+    const imageFileFrom = (data: DataTransfer | null): File | null => {
+      if (data === null) return null;
+      for (const item of Array.from(data.items)) {
+        if (item.kind !== 'file' || !item.type.startsWith('image/')) continue;
+        const file = item.getAsFile();
+        if (file !== null) return file;
+      }
+      return Array.from(data.files).find((file) => file.type.startsWith('image/')) ?? null;
+    };
+    const carriesFiles = (event: DragEvent): boolean =>
+      Array.from(event.dataTransfer?.types ?? []).includes('Files');
+    const handlePaste = (event: ClipboardEvent): void => {
+      if (event.defaultPrevented || imageIntakeBlockedRef.current) return;
+      const data = event.clipboardData;
+      // Wordなど文字と画像が同時に入った貼り付けは、従来どおり文字の貼り付けとして扱う。
+      if (data === null || data.getData('text/plain').trim().length > 0) return;
+      const file = imageFileFrom(data);
+      if (file === null) return;
+      event.preventDefault();
+      startImageTranslationRef.current(file);
+    };
+    const handleDragOver = (event: DragEvent): void => {
+      if (imageIntakeBlockedRef.current || !carriesFiles(event)) return;
+      event.preventDefault();
+      if (event.dataTransfer !== null) event.dataTransfer.dropEffect = 'copy';
+      setImageDragActive(true);
+    };
+    const handleDragLeave = (event: DragEvent): void => {
+      // 子要素間の移動でも発火するため、ウィンドウの外へ出たときだけ解除する。
+      if (event.relatedTarget === null) setImageDragActive(false);
+    };
+    const handleDrop = (event: DragEvent): void => {
+      setImageDragActive(false);
+      if (!carriesFiles(event)) return;
+      // ファイルのドロップは既定でそのファイルへの遷移になるため、画像以外でも必ず止める。
+      const alreadyHandled = event.defaultPrevented;
+      event.preventDefault();
+      if (alreadyHandled || imageIntakeBlockedRef.current) return;
+      const file = imageFileFrom(event.dataTransfer);
+      if (file !== null) startImageTranslationRef.current(file);
+    };
+    document.addEventListener('paste', handlePaste);
+    document.addEventListener('dragover', handleDragOver);
+    document.addEventListener('dragleave', handleDragLeave);
+    document.addEventListener('drop', handleDrop);
+    return () => {
+      document.removeEventListener('paste', handlePaste);
+      document.removeEventListener('dragover', handleDragOver);
+      document.removeEventListener('dragleave', handleDragLeave);
+      document.removeEventListener('drop', handleDrop);
+    };
+  }, []);
   const appearance = settingsState.settings?.appearance ?? 'system';
   useEffect(() => {
     if (!shouldOpenExternalTranslation(translationState, dismissedTranslationRequestId)) {
@@ -1467,6 +1595,12 @@ export function MainView(): React.JSX.Element {
           </button>
         </div>
       </aside>
+      {imageDragActive && (
+        <div className="image-drop-overlay" aria-hidden="true">
+          <ImageIcon size={26} />
+          <span>{t('main.imageTitle')}</span>
+        </div>
+      )}
       <section className="nani-canvas" inert={settingsRendered || onboardingActive}>
         {page === 'translate' ? (
           <Composer
@@ -1484,6 +1618,8 @@ export function MainView(): React.JSX.Element {
             }
             dismissedTranslationRequestId={dismissedTranslationRequestId}
             initialConversation={initialConversation}
+            pendingImage={pendingImage}
+            onPendingImageConsumed={() => setPendingImage(null)}
           />
         ) : (
           <>

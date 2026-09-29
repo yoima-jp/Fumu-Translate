@@ -370,10 +370,10 @@ export class LanguageServiceRegistry
         code,
         retryable,
       });
-      // 画像非対応はモデル固有なので次候補へ進める。認証などの非再試行エラーは候補を切り替えても直らない。
-      if (index + 1 >= candidates.length || (!retryable && code !== 'unsupported-input')) {
-        throw lastError;
-      }
+      // 画像を読めるかはmodelごとに違い、読めない場合の応答もProviderごとにまちまちで
+      // 'unsupported-input'へ分類しきれない（例: DeepInfraのテキスト専用modelは400を'unknown'で返す）。
+      // 候補は別Providerのことも多く認証エラーも候補固有なので、中断以外の失敗はすべて次候補へ進める。
+      if (index + 1 >= candidates.length) throw lastError;
     }
     if (lastError !== undefined) throw lastError;
     throw new UnconfiguredImageTextExtractionError();
