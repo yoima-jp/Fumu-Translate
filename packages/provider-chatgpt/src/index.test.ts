@@ -62,7 +62,49 @@ describe('ChatGPT provider credential boundary', () => {
     expect(body).not.toHaveProperty('temperature');
     expect(body).not.toHaveProperty('max_output_tokens');
     expect(body).not.toHaveProperty('text');
+    expect(body.input).toEqual([
+      { role: 'user', content: [{ type: 'input_text', text: 'Hello' }] },
+    ]);
     expect(events).toContainEqual({ type: 'text-delta', text: '訳文' });
+  });
+
+  it('sends image input as a data URL before the optional text', async () => {
+    const fetchRequest = vi.fn<FetchLike>(async () => streamResponse([]));
+    const client = new ChatGptClient({
+      model: 'gpt-6-sol',
+      credential: serializeChatGptCredential({
+        type: 'oauth',
+        access: 'access-token',
+        refresh: 'refresh-token',
+        expires: Date.now() + 3_600_000,
+        accountId: 'account-id',
+      }),
+      onCredentialChanged: vi.fn(),
+      fetch: fetchRequest,
+    });
+
+    const session = await client.createSession({
+      messages: [
+        {
+          role: 'user',
+          content: 'Read the text in this image.',
+          images: [{ mediaType: 'image/png', base64Data: 'aW1hZ2U=' }],
+        },
+      ],
+    });
+    await session.close();
+
+    const [, init] = fetchRequest.mock.calls[0] ?? [];
+    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    expect(body.input).toEqual([
+      {
+        role: 'user',
+        content: [
+          { type: 'input_image', image_url: 'data:image/png;base64,aW1hZ2U=' },
+          { type: 'input_text', text: 'Read the text in this image.' },
+        ],
+      },
+    ]);
   });
 
   it('refreshes expired credentials and persists rotated tokens', async () => {

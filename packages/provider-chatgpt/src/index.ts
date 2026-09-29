@@ -418,7 +418,30 @@ async function refreshCredential(
   };
 }
 
-function statusError(status: number): LlmProviderError {
+function imageInputUnsupported(responseBody: string): boolean {
+  const text = responseBody.toLowerCase().replace(/[_-]+/gu, ' ');
+  return (
+    /model.{0,100}\b(?:does not|doesn't|cannot|can't|is not|isn't)\s+(?:support|accept|process)\b.{0,80}\b(?:images?|vision)\b/u.test(
+      text,
+    ) ||
+    /\bimages?\b.{0,80}\b(?:(?:is|are)\s+)?(?:not supported|unsupported)\b.{0,80}\bmodel\b/u.test(
+      text,
+    ) ||
+    /\bunsupported\b.{0,40}\b(?:images?|vision)\b.{0,80}\bmodel\b/u.test(text) ||
+    /model.{0,100}\b(?:not compatible with|incompatible with)\b.{0,80}\b(?:images?|vision)\b/u.test(
+      text,
+    )
+  );
+}
+
+function statusError(status: number, responseBody = '', hasImages = false): LlmProviderError {
+  // 画像非対応の拒否だけ画像付き要求で分類し、画像なし要求のstatus分類は維持する。
+  if (hasImages && imageInputUnsupported(responseBody))
+    return new LlmProviderError('選択中のChatGPTモデルは画像入力に対応していません。', {
+      code: 'unsupported-input',
+      retryable: false,
+      status,
+    });
   if (status === 401)
     return new LlmProviderError('ChatGPTの認証期限が切れました。再ログインしてください。', {
       code: 'authentication',
@@ -555,18 +578,38 @@ export interface ChatGptClientConfig {
 }
 
 function responseInput(messages: readonly LlmMessage[]): readonly Record<string, unknown>[] {
+  // system/assistant上の画像はResponses APIへ移し替えられず、無視せず明示的に失敗させる。
+  if (messages.some((message) => message.role !== 'user' && (message.images?.length ?? 0) > 0))
+    throw new LlmProviderError('画像はユーザーメッセージにのみ指定できます。', {
+      code: 'unsupported-input',
+      retryable: false,
+    });
+
   return messages.flatMap<Record<string, unknown>>((message) =>
     message.role === 'system'
       ? []
       : [
           {
             role: message.role,
-            content: [
-              {
-                type: message.role === 'assistant' ? 'output_text' : 'input_text',
-                text: message.content,
-              },
-            ],
+            content:
+              message.role === 'user' && (message.images?.length ?? 0) > 0
+                ? [
+                    // OpenAI公式「Images and vision」仕様のinput_image/image_url data URL形式で送る。
+                    // OCR指示と画像を同時に送るときは画像を先に置き、空文は送らない。
+                    ...(message.images ?? []).map((image) => ({
+                      type: 'input_image',
+                      image_url: `data:${image.mediaType};base64,${image.base64Data}`,
+                    })),
+                    ...(message.content.length > 0
+                      ? [{ type: 'input_text', text: message.content }]
+                      : []),
+                  ]
+                : [
+                    {
+                      type: message.role === 'assistant' ? 'output_text' : 'input_text',
+                      text: message.content,
+                    },
+                  ],
           },
         ],
   );
@@ -669,13 +712,18 @@ export class ChatGptClient implements LlmClient {
         response = await this.#send(request, controller, true);
       }
       if (!response.ok) {
-        await readBoundedResponseText(response, undefined, controller.signal).catch(
-          (error: unknown) => {
-            if (controller.signal.aborted) throw error;
-            return '';
-          },
+        const responseBody = await readBoundedResponseText(
+          response,
+          undefined,
+          controller.signal,
+        ).catch((error: unknown) => {
+          if (controller.signal.aborted) throw error;
+          return '';
+        });
+        const hasImages = request.messages.some(
+          (message) => message.role === 'user' && (message.images?.length ?? 0) > 0,
         );
-        throw statusError(response.status);
+        throw statusError(response.status, responseBody, hasImages);
       }
       if (response.body === null) {
         cleanup();
