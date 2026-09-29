@@ -133,6 +133,15 @@ export type FollowUpMessageView =
       readonly retryable: boolean;
     };
 
+export type PopupErrorMessageKey =
+  | 'popup.selectionError'
+  | 'popup.selectionTooLarge'
+  | 'popup.imageReadError'
+  | 'popup.screenReadError'
+  | 'main.imageNoText'
+  | 'main.imageOcrUnavailable'
+  | 'main.imageTextTooLong';
+
 export type PopupViewState =
   | {
       readonly phase: 'idle';
@@ -158,6 +167,8 @@ export type PopupViewState =
       readonly phase: 'error';
       readonly requestId: string;
       readonly message: string;
+      readonly messageKey?: PopupErrorMessageKey;
+      readonly action?: 'open-clipboard' | 'retry-image-with-model';
     };
 
 export type HotkeyRegistrationState = 'registered' | 'conflict' | 'invalid' | 'disabled';
@@ -165,6 +176,7 @@ export type HotkeyRegistrationState = 'registered' | 'conflict' | 'invalid' | 'd
 export interface DesktopStatus {
   readonly hotkey: string;
   readonly hotkeyState: HotkeyRegistrationState;
+  readonly screenshotHotkeyState: HotkeyRegistrationState;
   readonly selectionServiceRunning: boolean;
   readonly popupVisible: boolean;
   readonly activeProviderName: string | null;
@@ -191,6 +203,7 @@ export type ImageTextExtractionErrorCode =
 export type ImageTextExtractionOutcome =
   | { readonly status: 'completed'; readonly text: string }
   | { readonly status: 'no-text' }
+  | { readonly status: 'unavailable' }
   | { readonly status: 'cancelled' }
   | {
       readonly status: 'failed';
@@ -198,6 +211,8 @@ export type ImageTextExtractionOutcome =
       readonly message: string;
       readonly retryable: boolean;
     };
+
+export type ImageTextExtractionMode = 'configured' | 'model';
 
 /** スクリーンショット範囲選択overlay内の座標（DIP、overlay windowの左上基準）。 */
 export interface ScreenCaptureSelection {
@@ -248,11 +263,16 @@ export interface FumuDesktopApi {
   /** nullでスクリーンショット翻訳を無効化する。 */
   updateScreenshotShortcut(shortcut: string | null): Promise<ScreenshotShortcutUpdateResult>;
   /** メインウィンドウに貼り付け・ドロップされた画像の文字を書き起こす。翻訳はしない。 */
-  extractImageText(image: ImageInputPayload): Promise<ImageTextExtractionOutcome>;
+  extractImageText(
+    image: ImageInputPayload,
+    mode?: ImageTextExtractionMode,
+  ): Promise<ImageTextExtractionOutcome>;
   /** 実行中の画像読み取りを中断する。読み取り中でなければ何もしない。 */
   cancelImageTextExtraction(): Promise<void>;
   /** スクリーンショット範囲選択overlayから、選択範囲（nullは取消）を返す。 */
   completeScreenCapture(selection: ScreenCaptureSelection | null): Promise<void>;
+  /** 端末OCRで読めなかった直前のスクリーンショットを、明示操作でAIモデルへ送る。 */
+  retryScreenCaptureWithModel(): Promise<void>;
   updateGeneralSettings(update: GeneralSettingsUpdate): Promise<SettingsSnapshot>;
   fetchProviderModels(request: FetchProviderModelsRequest): Promise<readonly ProviderModel[]>;
   loginChatGpt(providerId: string): Promise<void>;

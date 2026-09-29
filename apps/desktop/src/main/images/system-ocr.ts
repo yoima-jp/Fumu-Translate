@@ -248,7 +248,7 @@ function runOcrProcess(imagePath: string, signal: AbortSignal | undefined): Prom
 
 /**
  * 画像を一時ファイルへ書き出してOS標準OCRで読む。中断はAbortErrorとしてthrowし、
- * それ以外の失敗は'unavailable'として返す（呼び出し側がAIモデルへfallbackできるように）。
+ * それ以外の失敗は'unavailable'として返し、呼び出し側が文字なしと区別できるようにする。
  */
 export async function recognizeWithSystemOcr(
   image: LlmImageInput,

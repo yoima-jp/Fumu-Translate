@@ -19,19 +19,17 @@ export interface ImageTextRecognizerOptions {
   readonly logger: ImageTextRecognizerLogger;
 }
 
-function isProviderNotConfigured(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'code' in error &&
-    error.code === 'provider-not-configured'
-  );
+export interface ImageTextRecognitionOptions {
+  /** ユーザーが明示的にAIでの再試行を選んだ場合だけtrueにする。 */
+  readonly modelOnly?: boolean;
 }
+
+type ImageTextRecognitionResult = ImageTextExtractionResult | { readonly status: 'unavailable' };
 
 /**
  * 設定に応じてOS標準OCRとAIモデルの文字起こしを切り替える。
- * OCRモードでもOCRが使えない・文字が取れない場合はAIモデルへfallbackし、
- * 「読めなかった」で止まらないようにする（モデル側でも候補順にfallbackする）。
+ * 端末OCRモードでは画像を外部へ送らない。OCRで読めなかった画像をモデルへ渡すのは、
+ * 呼び出し側がユーザーの明示操作を受けてmodelOnlyを指定した場合に限る。
  */
 export class ImageTextRecognizer implements ImageTextExtractionPort {
   readonly #options: ImageTextRecognizerOptions;
@@ -40,27 +38,30 @@ export class ImageTextRecognizer implements ImageTextExtractionPort {
     this.#options = options;
   }
 
-  async extractImageText(request: ImageTextExtractionRequest): Promise<ImageTextExtractionResult> {
-    if (this.#options.mode() !== 'system') return this.#options.model.extractImageText(request);
+  async extractImageText(
+    request: ImageTextExtractionRequest,
+    options: ImageTextRecognitionOptions = {},
+  ): Promise<ImageTextRecognitionResult> {
+    if (options.modelOnly === true || this.#options.mode() !== 'system') {
+      return this.#options.model.extractImageText(request);
+    }
 
     const image = request.images[0];
     const systemResult =
       image === undefined ? null : await this.#options.systemOcr(image, request.signal);
     if (systemResult?.status === 'completed') return systemResult;
-
-    // OCR本文は記録せず、fallback判断に必要な状態だけを残す。
-    this.#options.logger.info('System OCR did not produce text; falling back to model', {
-      status: systemResult?.status ?? 'no-image',
-      reason: systemResult?.status === 'unavailable' ? systemResult.reason : undefined,
-    });
-    try {
-      return await this.#options.model.extractImageText(request);
-    } catch (error) {
-      // OCRが正常に動いて文字が無かった画像なら、モデル未設定を理由に失敗させず「文字なし」と伝える。
-      if (systemResult?.status === 'no-text' && isProviderNotConfigured(error)) {
-        return { status: 'no-text' };
-      }
-      throw error;
+    if (systemResult?.status === 'unavailable' || systemResult === null) {
+      // OCR自体が使えない状態を「画像に文字がない」と扱うと、設定やAI再試行の案内を誤る。
+      this.#options.logger.info('System OCR is unavailable', {
+        reason: systemResult?.status === 'unavailable' ? systemResult.reason : 'no-image',
+      });
+      return { status: 'unavailable' };
     }
+
+    // OCR本文や画像は記録せず、文字が見つからなかった状態だけを残す。
+    this.#options.logger.info('System OCR did not produce text', {
+      status: systemResult.status,
+    });
+    return { status: 'no-text' };
   }
 }

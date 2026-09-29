@@ -1884,9 +1884,16 @@ textarea {
   border-radius: 999px;
 }
 
+.hotkey-hints {
+  display: grid;
+  margin: 31px 0 0;
+  justify-items: center;
+  gap: 8px;
+}
+
 .hotkey-hint {
   display: flex;
-  margin: 31px 0 0;
+  margin: 0;
   align-items: center;
   justify-content: center;
   gap: 7px;
@@ -2884,18 +2891,20 @@ button.style-row {
   color: var(--nani-muted);
 }
 
-.inline-error.image-input-error {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 3px 8px;
+.image-stage-error .nani-error {
+  margin-top: 0;
 }
 
-.image-input-error .text-button {
-  min-height: 26px;
-  padding: 0 5px;
-  color: #9d403a;
-  text-decoration: underline;
+.text-button.image-model-retry {
+  color: var(--fumu-accent);
+  background: transparent;
+  border-color: var(--nani-line);
+}
+
+.text-button.image-model-retry:hover:not(:disabled) {
+  color: var(--nani-ink);
+  background: var(--nani-control);
+  border-color: var(--fumu-accent);
 }
 
 .settings-modal .text-button {

@@ -170,14 +170,24 @@ function PopupView(): React.JSX.Element {
 
       {state.phase === 'error' && (
         <section className="error-state" role="alert">
-          <p>{t('popup.selectionError')}</p>
-          <button
-            className="translate-button"
-            type="button"
-            onClick={() => void window.fumu.triggerClipboard()}
-          >
-            {t('popup.openClipboard')}
-          </button>
+          <p>{state.messageKey === undefined ? state.message : t(state.messageKey)}</p>
+          {state.action === 'retry-image-with-model' ? (
+            <button
+              className="text-button image-model-retry"
+              type="button"
+              onClick={() => void window.fumu.retryScreenCaptureWithModel()}
+            >
+              {t('common.readWithAi')}
+            </button>
+          ) : (
+            <button
+              className="translate-button"
+              type="button"
+              onClick={() => void window.fumu.triggerClipboard()}
+            >
+              {t('popup.openClipboard')}
+            </button>
+          )}
         </section>
       )}
     </article>

@@ -79,6 +79,8 @@ describe('selection failure does not translate stale clipboard text', () => {
       expect(fixture.popup.showError).toHaveBeenCalledWith(
         expect.any(String),
         '選択を取得できませんでした。',
+        undefined,
+        'popup.selectionError',
       );
       expect(fixture.popup.showErrorInMain).not.toHaveBeenCalled();
     } else {

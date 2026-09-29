@@ -25,7 +25,9 @@ import type {
   DesktopStatus,
   HotkeyRegistrationState,
   ImageInputPayload,
+  ImageTextExtractionMode,
   ImageTextExtractionOutcome,
+  PopupErrorMessageKey,
   Point,
   PopupResizeRequest,
   ResolvedSelection,
@@ -100,7 +102,12 @@ export interface PopupWindowPort {
   showFollowUpStarted(requestId: string, question: string): void;
   showFollowUpEvent(event: FollowUpEvent): void;
   showManual(requestId: string, clipboardText: string | null): void;
-  showError(requestId: string, message: string): void;
+  showError(
+    requestId: string,
+    message: string,
+    action?: 'open-clipboard' | 'retry-image-with-model',
+    messageKey?: PopupErrorMessageKey,
+  ): void;
   showErrorInMain(requestId: string, message: string): void;
   resize(request: PopupResizeRequest): void;
   containsPhysicalPoint(point: Point): boolean;
@@ -134,12 +141,21 @@ export interface SettingsPort {
 }
 
 export interface ImageTextExtractionPort {
-  extractImageText(request: ImageTextExtractionRequest): Promise<ImageTextExtractionResult>;
+  extractImageText(
+    request: ImageTextExtractionRequest,
+    options?: { readonly modelOnly?: boolean },
+  ): Promise<ImageTextExtractionResult | { readonly status: 'unavailable' }>;
 }
 
 interface ActiveImageTextExtraction {
   readonly id: string;
   readonly controller: AbortController;
+}
+
+interface PendingScreenshotModelRetry {
+  readonly capture: CapturedScreenRegion;
+  readonly requestId: string;
+  readonly requestEpoch: number;
 }
 
 export interface ProviderStatePort {
@@ -239,10 +255,12 @@ export class AppController {
   #mainConversationDirection: 'incoming' | 'outgoing' | null = null;
   #hotkeyAccelerator: string;
   #hotkeyState: HotkeyRegistrationState = 'disabled';
+  #screenshotHotkeyState: HotkeyRegistrationState = 'disabled';
   #shortcutCaptureActive = false;
   #hotkeyTriggerActive = false;
   #screenshotFlowActive = false;
   #activeImageTextExtraction: ActiveImageTextExtraction | null = null;
+  #pendingScreenshotModelRetry: PendingScreenshotModelRetry | null = null;
   #removeMouseDownListener: (() => void) | null = null;
   #removeSettingsListener: (() => void) | null = null;
   #disposed = false;
@@ -270,6 +288,7 @@ export class AppController {
     return {
       hotkey: this.#hotkeyAccelerator,
       hotkeyState: this.#hotkeyState,
+      screenshotHotkeyState: this.#screenshotHotkeyState,
       selectionServiceRunning: this.#selection.isRunning,
       popupVisible: this.#popup.isVisible,
       activeProviderName: this.#providers.activeProviderName,
@@ -334,11 +353,13 @@ export class AppController {
     const screenshotShortcut = this.#settings.snapshot.screenshotShortcut;
     if (screenshotShortcut !== null && this.#screenshotHotkey !== null) {
       if (screenshotShortcut === this.#hotkeyAccelerator) {
+        this.#screenshotHotkeyState = 'conflict';
         this.#logger.warn('Saved screenshot shortcut conflicts with translation shortcut');
       } else {
         const screenshotRegistration = this.#screenshotHotkey.register(screenshotShortcut, () =>
           this.#triggerScreenshotFromHotkey(),
         );
+        this.#screenshotHotkeyState = screenshotRegistration.state;
         if (screenshotRegistration.state !== 'registered') {
           this.#logger.warn('Saved screenshot shortcut could not be registered', {
             state: screenshotRegistration.state,
@@ -400,8 +421,16 @@ export class AppController {
         errorName: error instanceof Error ? error.name : 'UnknownError',
       });
       this.#clearActiveSession();
-      if (surface === 'popup') this.#popup.showError(requestId, message);
-      else this.#popup.showErrorInMain(requestId, message);
+      if (surface === 'popup') {
+        this.#popup.showError(
+          requestId,
+          message,
+          undefined,
+          error instanceof SelectionTextTooLargeError
+            ? 'popup.selectionTooLarge'
+            : 'popup.selectionError',
+        );
+      } else this.#popup.showErrorInMain(requestId, message);
       this.#publishStatus();
     }
   }
@@ -456,8 +485,11 @@ export class AppController {
     }
   }
 
-  extractImageText(image: ImageInputPayload): Promise<ImageTextExtractionOutcome> {
-    return this.#runImageTextExtraction(image);
+  extractImageText(
+    image: ImageInputPayload,
+    mode: ImageTextExtractionMode = 'configured',
+  ): Promise<ImageTextExtractionOutcome> {
+    return this.#runImageTextExtraction(image, mode);
   }
 
   cancelImageTextExtraction(): void {
@@ -477,6 +509,44 @@ export class AppController {
     return this.#runScreenshotTranslation().finally(() => {
       this.#screenshotFlowActive = false;
     });
+  }
+
+  async retryScreenCaptureWithModel(): Promise<void> {
+    const pending = this.#pendingScreenshotModelRetry;
+    if (
+      pending === null ||
+      this.#screenshotFlowActive ||
+      !this.#isCurrent(pending.requestEpoch)
+    ) {
+      return;
+    }
+    this.#pendingScreenshotModelRetry = null;
+    // Retry shares the screenshot flow's cancellation rules: closing the popup or starting a new
+    // request must stop the in-flight OCR/model call and prevent another screenshot flow racing it.
+    this.#screenshotFlowActive = true;
+    try {
+      await this.#translateCapturedScreen(
+        pending.capture,
+        pending.requestId,
+        pending.requestEpoch,
+        'model',
+      );
+    } catch (error) {
+      if (!this.#isCurrent(pending.requestEpoch)) return;
+      this.#logger.warn('Screenshot model retry failed', {
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+      });
+      this.#clearActiveSession();
+      this.#popup.showError(
+        pending.requestId,
+        '画像を読み取れませんでした。',
+        undefined,
+        'popup.imageReadError',
+      );
+      this.#publishStatus();
+    } finally {
+      this.#screenshotFlowActive = false;
+    }
   }
 
   useManualText(input: string): void {
@@ -871,11 +941,13 @@ export class AppController {
     }
 
     try {
+      this.#screenshotHotkeyState = registration.state;
       this.#settings.setScreenshotShortcut(nextShortcut);
     } catch (error) {
       const rollback = this.#screenshotHotkey.register(previousShortcut ?? '', () =>
         this.#triggerScreenshotFromHotkey(),
       );
+      this.#screenshotHotkeyState = rollback.state;
       if (rollback.state !== 'registered' && rollback.state !== 'disabled') {
         throw new AggregateError(
           [error, new Error('The previous screenshot shortcut could not be restored.')],
@@ -954,6 +1026,7 @@ export class AppController {
   }
 
   closePopup(): void {
+    this.#pendingScreenshotModelRetry = null;
     if (this.#activeSurface === 'popup') {
       this.#invalidateRequest();
       this.#clearActiveSession();
@@ -1040,6 +1113,7 @@ export class AppController {
 
   async #runImageTextExtraction(
     input: ImageInputPayload | Buffer,
+    mode: ImageTextExtractionMode = 'configured',
   ): Promise<ImageTextExtractionOutcome> {
     // 一度に一枚だけを処理し、後から届いた画像要求が古いOCR結果を置き換える。
     this.#activeImageTextExtraction?.controller.abort();
@@ -1060,11 +1134,14 @@ export class AppController {
           retryable: false,
         };
       }
-      const result = await this.#imageTextExtraction.extractImageText({
-        requestId: active.id,
-        images: [image],
-        signal: active.controller.signal,
-      });
+      const result = await this.#imageTextExtraction.extractImageText(
+        {
+          requestId: active.id,
+          images: [image],
+          signal: active.controller.signal,
+        },
+        mode === 'model' ? { modelOnly: true } : undefined,
+      );
       if (active.controller.signal.aborted) return { status: 'cancelled' };
       return result;
     } catch (error) {
@@ -1123,67 +1200,8 @@ export class AppController {
       const capture: CapturedScreenRegion | null = await this.#screenRegionCapture.capture();
       if (!this.#isCurrent(requestEpoch) || capture === null) return;
 
-      const anchor: SelectionAnchor = { kind: 'selection', rect: capture.rect };
       requestId = randomUUID();
-      this.#activeSurface = 'popup';
-      this.#popup.showCapturing(requestId, anchor);
-      this.#registerPopupDismissHotkey();
-      this.#publishStatus();
-
-      const outcome = await this.#runImageTextExtraction(capture.png);
-      if (!this.#isCurrent(requestEpoch)) return;
-      if (outcome.status === 'cancelled') {
-        this.#clearActiveSession();
-        this.#hotkey.unregisterTransient(POPUP_DISMISS_HOTKEY);
-        this.#popup.hide();
-        this.#publishStatus();
-        return;
-      }
-      if (outcome.status === 'no-text') {
-        this.#clearActiveSession();
-        this.#popup.showError(requestId, '画像から文字が見つかりませんでした。');
-        this.#publishStatus();
-        return;
-      }
-      if (outcome.status === 'failed') {
-        this.#clearActiveSession();
-        this.#popup.showError(requestId, outcome.message);
-        this.#publishStatus();
-        return;
-      }
-
-      if (outcome.text.trim().length === 0) {
-        this.#clearActiveSession();
-        this.#popup.showError(requestId, '画像から文字が見つかりませんでした。');
-        this.#publishStatus();
-        return;
-      }
-      let text: string | null;
-      try {
-        text = this.#validatedSourceText(outcome.text);
-      } catch (error) {
-        if (!(error instanceof SelectionTextTooLargeError)) throw error;
-        this.#clearActiveSession();
-        this.#popup.showError(requestId, '画像から読み取った文字が長すぎます。');
-        this.#publishStatus();
-        return;
-      }
-      if (text === null) {
-        this.#clearActiveSession();
-        this.#popup.showError(requestId, '画像から文字が見つかりませんでした。');
-        this.#publishStatus();
-        return;
-      }
-
-      const selection: ResolvedSelection = {
-        text,
-        programName: null,
-        method: 'screenshot',
-        anchor,
-        acquiredAt: Date.now(),
-      };
-      // OCR本文を翻訳専用の保存経路へ重ねず、通常の選択翻訳へ渡して履歴を一度だけ作る。
-      await this.#showSelectionAndTranslate(requestId, selection, requestEpoch, 'popup');
+      await this.#translateCapturedScreen(capture, requestId, requestEpoch, 'configured');
     } catch (error) {
       if (!this.#isCurrent(requestEpoch)) return;
       this.#logger.warn('Screenshot translation request failed', {
@@ -1191,10 +1209,130 @@ export class AppController {
       });
       this.#clearActiveSession();
       if (requestId !== null) {
-        this.#popup.showError(requestId, '画面を読み取れませんでした。');
+        this.#popup.showError(
+          requestId,
+          '画面を読み取れませんでした。',
+          undefined,
+          'popup.screenReadError',
+        );
       }
       this.#publishStatus();
     }
+  }
+
+  async #translateCapturedScreen(
+    capture: CapturedScreenRegion,
+    requestId: string,
+    requestEpoch: number,
+    mode: ImageTextExtractionMode,
+  ): Promise<void> {
+    const anchor: SelectionAnchor = { kind: 'selection', rect: capture.rect };
+    this.#activeSurface = 'popup';
+    this.#popup.showCapturing(requestId, anchor);
+    this.#registerPopupDismissHotkey();
+    this.#publishStatus();
+
+    const outcome = await this.#runImageTextExtraction(capture.png, mode);
+    if (!this.#isCurrent(requestEpoch)) return;
+    if (outcome.status === 'cancelled') {
+      this.#clearActiveSession();
+      this.#hotkey.unregisterTransient(POPUP_DISMISS_HOTKEY);
+      this.#popup.hide();
+      this.#publishStatus();
+      return;
+    }
+    if (outcome.status === 'no-text') {
+      this.#clearActiveSession();
+      const canRetryWithModel =
+        mode === 'configured' &&
+        this.#settings.snapshot.imageTextRecognition === 'system' &&
+        this.#providers.configured;
+      if (canRetryWithModel) {
+        // 再選択を求めず、ユーザーが明示的に選んだ場合だけ同じ画像をAIへ送る。
+        this.#pendingScreenshotModelRetry = { capture, requestId, requestEpoch };
+      }
+      this.#popup.showError(
+        requestId,
+        '画像から文字が見つかりませんでした。',
+        canRetryWithModel ? 'retry-image-with-model' : undefined,
+        'main.imageNoText',
+      );
+      this.#publishStatus();
+      return;
+    }
+    if (outcome.status === 'unavailable') {
+      this.#clearActiveSession();
+      const canRetryWithModel =
+        mode === 'configured' &&
+        this.#settings.snapshot.imageTextRecognition === 'system' &&
+        this.#providers.configured;
+      if (canRetryWithModel) {
+        this.#pendingScreenshotModelRetry = { capture, requestId, requestEpoch };
+      }
+      this.#popup.showError(
+        requestId,
+        '端末の文字認識を利用できません。',
+        canRetryWithModel ? 'retry-image-with-model' : undefined,
+        'main.imageOcrUnavailable',
+      );
+      this.#publishStatus();
+      return;
+    }
+    if (outcome.status === 'failed') {
+      this.#clearActiveSession();
+      this.#popup.showError(requestId, outcome.message, undefined, 'popup.imageReadError');
+      this.#publishStatus();
+      return;
+    }
+
+    this.#pendingScreenshotModelRetry = null;
+    if (outcome.text.trim().length === 0) {
+      this.#clearActiveSession();
+      this.#popup.showError(
+        requestId,
+        '画像から文字が見つかりませんでした。',
+        undefined,
+        'main.imageNoText',
+      );
+      this.#publishStatus();
+      return;
+    }
+    let text: string | null;
+    try {
+      text = this.#validatedSourceText(outcome.text);
+    } catch (error) {
+      if (!(error instanceof SelectionTextTooLargeError)) throw error;
+      this.#clearActiveSession();
+      this.#popup.showError(
+        requestId,
+        '画像から読み取った文字が長すぎます。',
+        undefined,
+        'main.imageTextTooLong',
+      );
+      this.#publishStatus();
+      return;
+    }
+    if (text === null) {
+      this.#clearActiveSession();
+      this.#popup.showError(
+        requestId,
+        '画像から文字が見つかりませんでした。',
+        undefined,
+        'main.imageNoText',
+      );
+      this.#publishStatus();
+      return;
+    }
+
+    const selection: ResolvedSelection = {
+      text,
+      programName: null,
+      method: 'screenshot',
+      anchor,
+      acquiredAt: Date.now(),
+    };
+    // OCR本文を翻訳専用の保存経路へ重ねず、通常の選択翻訳へ渡して履歴を一度だけ作る。
+    await this.#showSelectionAndTranslate(requestId, selection, requestEpoch, 'popup');
   }
 
   async #showClipboardOrManual(
@@ -1534,6 +1672,7 @@ export class AppController {
   }
 
   #beginRequest(): number {
+    this.#pendingScreenshotModelRetry = null;
     // 別の翻訳要求が画面OCRを置き換える場合、不要になった画像処理も止める。
     if (this.#screenshotFlowActive) this.#activeImageTextExtraction?.controller.abort();
     this.#activeRequestAbortController?.abort();

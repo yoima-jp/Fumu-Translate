@@ -4,6 +4,7 @@ import type {
   DesktopStatus,
   FumuDesktopApi,
   ImageInputPayload,
+  ImageTextExtractionMode,
   ScreenCaptureSelection,
   PopupResizeRequest,
   PopupViewState,
@@ -64,11 +65,12 @@ const api: FumuDesktopApi = {
   updateShortcut: (shortcut) => ipcRenderer.invoke(IPC_CHANNELS.settingsUpdateShortcut, shortcut),
   updateScreenshotShortcut: (shortcut) =>
     ipcRenderer.invoke(IPC_CHANNELS.settingsUpdateScreenshotShortcut, shortcut),
-  extractImageText: (image: ImageInputPayload) =>
-    ipcRenderer.invoke(IPC_CHANNELS.appExtractImageText, image),
+  extractImageText: (image: ImageInputPayload, mode?: ImageTextExtractionMode) =>
+    ipcRenderer.invoke(IPC_CHANNELS.appExtractImageText, image, mode),
   cancelImageTextExtraction: () => ipcRenderer.invoke(IPC_CHANNELS.appCancelImageTextExtraction),
   completeScreenCapture: (selection: ScreenCaptureSelection | null) =>
     ipcRenderer.invoke(IPC_CHANNELS.screenCaptureComplete, selection),
+  retryScreenCaptureWithModel: () => ipcRenderer.invoke(IPC_CHANNELS.screenCaptureRetryWithModel),
   updateGeneralSettings: (update: GeneralSettingsUpdate) =>
     ipcRenderer.invoke(IPC_CHANNELS.settingsUpdateGeneral, update),
   fetchProviderModels: (request: FetchProviderModelsRequest) =>

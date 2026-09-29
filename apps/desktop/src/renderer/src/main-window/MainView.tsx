@@ -7,7 +7,6 @@ import {
   PenLine,
   Settings as SettingsIcon,
   SlidersHorizontal,
-  X,
 } from 'lucide-react';
 import { MAX_TRANSLATION_SOURCE_CODE_POINTS } from '@fumu/translation-core';
 import type { DesktopStatus, ImageInputPayload, PopupViewState } from '../../../shared/contracts';
@@ -63,6 +62,7 @@ interface ResumableConversation {
 const INITIAL_STATUS: DesktopStatus = {
   hotkey: DEFAULT_TRANSLATE_SHORTCUT,
   hotkeyState: 'disabled',
+  screenshotHotkeyState: 'disabled',
   selectionServiceRunning: false,
   popupVisible: false,
   activeProviderName: null,
@@ -407,6 +407,13 @@ function Composer({
   const [imageStage, setImageStage] = useState<
     | { readonly previewUrl: string; readonly phase: 'reading' }
     | { readonly previewUrl: string; readonly phase: 'translating'; readonly text: string }
+    | {
+        readonly previewUrl: string;
+        readonly phase: 'error';
+        readonly message: string;
+        readonly action:
+          { readonly type: 'model'; readonly file: File } | { readonly type: 'settings' } | null;
+      }
     | null
   >(null);
   // 結果画面の原文カードに出す元画像。原文を直して翻訳し直しても同じ画像の翻訳として表示を保つため、
@@ -415,7 +422,6 @@ function Composer({
     readonly url: string;
     readonly sourceTexts: readonly string[];
   } | null>(null);
-  const [imageUnsupportedModel, setImageUnsupportedModel] = useState(false);
   const [quickSettingsOpen, setQuickSettingsOpen] = useState(false);
   const [quickSettingsRendered, setQuickSettingsRendered] = useState(false);
   const quickSettingsRef = useRef<HTMLDivElement>(null);
@@ -423,12 +429,14 @@ function Composer({
   const quickSettingsCloseTimerRef = useRef<number | null>(null);
   const styleAdjustCloseTimerRef = useRef<number | null>(null);
   const submittingRef = useRef(false);
+  const submissionEpochRef = useRef(0);
   const editorRef = useRef<InlineContextEditorHandle>(null);
   const imageRequestIdRef = useRef(0);
   const imagePreviewUrlRef = useRef<string | null>(null);
   const resultImageUrlRef = useRef<string | null>(null);
   const imageExtractionActiveRef = useRef(false);
   const imageFileInputRef = useRef<HTMLInputElement>(null);
+  const [editorKey, setEditorKey] = useState(0);
   const quickSettingsId = useId();
   const conversationReady =
     mode !== 'conversation' ||
@@ -483,6 +491,7 @@ function Composer({
       !submittedConversationReady
     )
       return;
+    const submissionEpoch = ++submissionEpochRef.current;
     // 翻訳後も「実際に送信した指示」を表示するため、送信時点で表示用データを固定する。
     // 文体UIの現在値から都度再計算すると、翻訳中の設定変更で結果の表示とリクエストがずれる。
     const submittedInstructions = appliedTranslationInstructions({
@@ -551,12 +560,14 @@ function Composer({
       // Keep the rich editor mounted until then so a rejected invocation cannot remount an empty
       // editor while leaving an invisible parent submission value behind.
       .then(() => {
+        if (submissionEpoch !== submissionEpochRef.current) return;
         submittingRef.current = false;
         setSubmitting(false);
         setResultInstructions(submittedInstructions);
         setDrafting(false);
       })
       .catch(() => {
+        if (submissionEpoch !== submissionEpochRef.current) return;
         submittingRef.current = false;
         setSubmitting(false);
         setSubmitError(t('main.startError'));
@@ -578,17 +589,33 @@ function Composer({
     }
     setResultImage(null);
   };
-  const cancelImageReading = (): void => {
+  const startAnotherText = (): void => {
+    // 古い翻訳のIPC完了が、新しい入力画面を結果画面へ戻さないよう無効化する。
+    submissionEpochRef.current += 1;
     imageRequestIdRef.current += 1;
-    imageExtractionActiveRef.current = false;
-    void window.fumu.cancelImageTextExtraction().catch(() => undefined);
+    if (imageExtractionActiveRef.current) {
+      imageExtractionActiveRef.current = false;
+      void window.fumu.cancelImageTextExtraction().catch(() => undefined);
+    }
     clearImageStage();
+    clearResultImage();
+    setText('');
+    setInlineContexts([]);
+    setResultInstructions([]);
+    setConversationTurns([]);
+    setConversationSessionId(crypto.randomUUID());
+    setActiveConversationSubmission(null);
+    setResumedConversationTurn(null);
+    submittingRef.current = false;
+    setSubmitting(false);
+    setSubmitError(null);
+    setEditorKey((value) => value + 1);
+    setDrafting(true);
   };
-  const readImage = (file: File): void => {
+  const readImage = (file: File, extractionMode: 'configured' | 'model' = 'configured'): void => {
     // 翻訳の開始中に読み取りを始めると、開始完了で入力欄が閉じて書き起こし文が翻訳されない。
     if (submittingRef.current) return;
     setSubmitError(null);
-    setImageUnsupportedModel(false);
     const cancelPrevious = imageExtractionActiveRef.current;
     imageExtractionActiveRef.current = false;
     const requestId = ++imageRequestIdRef.current;
@@ -607,7 +634,17 @@ function Composer({
 
     void (async () => {
       let extracting = false;
-      let handedOffToTranslation = false;
+      let keepImageStage = false;
+      const showImageError = (
+        message: string,
+        action:
+          | { readonly type: 'model'; readonly file: File }
+          | { readonly type: 'settings' }
+          | null = null,
+      ): void => {
+        keepImageStage = true;
+        setImageStage({ previewUrl, phase: 'error', message, action });
+      };
       try {
         if (cancelPrevious) {
           await window.fumu.cancelImageTextExtraction().catch(() => undefined);
@@ -616,12 +653,12 @@ function Composer({
         if (requestId !== imageRequestIdRef.current) return;
         extracting = true;
         imageExtractionActiveRef.current = true;
-        const outcome = await window.fumu.extractImageText(image);
+        const outcome = await window.fumu.extractImageText(image, extractionMode);
         if (requestId !== imageRequestIdRef.current) return;
         switch (outcome.status) {
           case 'completed': {
             if (outcome.text.trim().length === 0) {
-              setSubmitError(t('main.imageNoText'));
+              showImageError(t('main.imageNoText'));
               break;
             }
             // 画像は入力途中の文と混ぜず、それ単体の新しい翻訳として扱う。
@@ -629,44 +666,60 @@ function Composer({
               .slice(0, MAX_TRANSLATION_SOURCE_CODE_POINTS)
               .join('');
             imageExtractionActiveRef.current = false;
-            handedOffToTranslation = true;
+            keepImageStage = true;
             setImageStage({ previewUrl, phase: 'translating', text: sourceText });
             // 文脈・文体・翻訳中状態を既存の翻訳開始処理と共有する。
             submitRef.current({ text: sourceText });
             break;
           }
           case 'no-text':
-            setSubmitError(t('main.imageNoText'));
+            if (
+              extractionMode === 'configured' &&
+              settings?.imageTextRecognition === 'system' &&
+              status.translationConfigured
+            ) {
+              showImageError(t('main.imageNoText'), { type: 'model', file });
+            } else {
+              showImageError(t('main.imageNoText'));
+            }
+            break;
+          case 'unavailable':
+            if (settings?.imageTextRecognition === 'system' && status.translationConfigured) {
+              showImageError(t('main.imageOcrUnavailable'), { type: 'model', file });
+            } else if (!status.translationConfigured) {
+              showImageError(t('main.imageOcrUnavailable'), { type: 'settings' });
+            } else {
+              showImageError(t('main.imageOcrUnavailable'));
+            }
             break;
           case 'cancelled':
             break;
           case 'failed':
             if (outcome.code === 'unsupported-input') {
-              setImageUnsupportedModel(true);
-              setSubmitError(t('main.imageModelUnsupported'));
+              showImageError(t('main.imageModelUnsupported'), { type: 'settings' });
             } else if (outcome.code === 'image-too-large') {
-              setSubmitError(t('main.imageTooLarge'));
+              showImageError(t('main.imageTooLarge'));
             } else if (outcome.code === 'invalid-image') {
-              setSubmitError(t('main.imageInvalid'));
+              showImageError(t('main.imageInvalid'));
             } else {
-              setSubmitError(outcome.message);
+              showImageError(outcome.message);
             }
             break;
         }
       } catch (error) {
         if (requestId !== imageRequestIdRef.current) return;
         if (error instanceof ImageInputTooLargeError) {
-          setSubmitError(t('main.imageTooLarge'));
+          showImageError(t('main.imageTooLarge'));
         } else if (!extracting) {
-          setSubmitError(t('main.imageUnreadable'));
+          showImageError(t('main.imageUnreadable'));
         } else {
-          setSubmitError(t('common.genericError'));
+          showImageError(t('common.genericError'));
         }
       } finally {
         if (requestId === imageRequestIdRef.current) {
           imageExtractionActiveRef.current = false;
-          // 翻訳へ引き渡した場合は、結果画面へ切り替わるまで読み取り表示を残す（下のeffectで片付ける）。
-          if (!handedOffToTranslation) clearImageStage();
+          // 翻訳開始後とエラー表示では画像翻訳の画面を保ち、明示的な取消までホームへ戻さない。
+          if (!keepImageStage) clearImageStage();
         }
       }
     })();
@@ -857,31 +910,15 @@ function Composer({
     state.phase === 'selection' && !drafting && !showingConversationResult;
   const showingResult = showingConversationResult || showingStandardResult;
   const showingImageStage = imageStage !== null && drafting;
+  const showTranslationShortcutHint = status.hotkeyState === 'registered';
+  const showScreenshotShortcutHint =
+    settings?.screenshotShortcut != null && status.screenshotHotkeyState === 'registered';
   return (
     <div className="translate-workspace composer-workspace">
       {showingResult ? (
         <>
           <div className="nani-result-actions">
-            <button
-              className="nani-new-bar"
-              type="button"
-              onClick={() => {
-                // The rich editor owns its DOM while mounted. Reset the parent submission state at
-                // the same boundary so an empty remounted editor can never submit hidden prior input.
-                setText('');
-                setInlineContexts([]);
-                setResultInstructions([]);
-                setConversationTurns([]);
-                setConversationSessionId(crypto.randomUUID());
-                setActiveConversationSubmission(null);
-                setResumedConversationTurn(null);
-                clearResultImage();
-                submittingRef.current = false;
-                setSubmitting(false);
-                setSubmitError(null);
-                setDrafting(true);
-              }}
-            >
+            <button className="nani-new-bar" type="button" onClick={startAnotherText}>
               <SlidersHorizontal size={19} />
               <span>{t('main.anotherText')}</span>
               <PenLine size={19} />
@@ -893,38 +930,78 @@ function Composer({
           {showingImageStage && (
             <>
               <div className="nani-result-actions">
-                <button className="nani-new-bar" type="button" onClick={cancelImageReading}>
-                  <X size={19} />
-                  <span>{t('common.cancel')}</span>
+                <button className="nani-new-bar" type="button" onClick={startAnotherText}>
+                  <SlidersHorizontal size={19} />
+                  <span>{t('main.anotherText')}</span>
+                  <PenLine size={19} />
                 </button>
               </div>
-              <article className="nani-source-card has-image" aria-busy="true">
-                <img
-                  className="nani-source-image"
-                  src={imageStage.previewUrl}
-                  alt={t('result.sourceImage')}
-                />
-                <div className="nani-loading-lines" aria-hidden="true">
-                  <span />
-                  <span />
-                </div>
-              </article>
-              <div className="translation-arrived">
-                <span className="mini-brand">
-                  <FumuMascot animated />
-                </span>
-                <span role="status">
-                  {imageStage.phase === 'reading'
-                    ? t('main.imageReading')
-                    : t('main.imageTranslating')}
-                </span>
-              </div>
-              <article className="nani-result-card" aria-busy="true">
-                <div className="nani-loading-lines" aria-hidden="true">
-                  <span />
-                  <span />
-                </div>
-              </article>
+              <section className="nani-result-flow" aria-live="polite">
+                <article
+                  className="nani-source-card has-image"
+                  aria-busy={imageStage.phase !== 'error'}
+                >
+                  <img
+                    className="nani-source-image"
+                    src={imageStage.previewUrl}
+                    alt={t('result.sourceImage')}
+                  />
+                  {imageStage.phase !== 'error' && (
+                    <div className="nani-loading-lines" aria-hidden="true">
+                      <span />
+                      <span />
+                    </div>
+                  )}
+                </article>
+                {imageStage.phase !== 'error' && (
+                  <div className="translation-arrived">
+                    <span className="mini-brand">
+                      <FumuMascot animated />
+                    </span>
+                    <span role="status">
+                      {imageStage.phase === 'reading'
+                        ? t('main.imageReading')
+                        : t('main.imageTranslating')}
+                    </span>
+                  </div>
+                )}
+                <article
+                  className={
+                    imageStage.phase === 'error'
+                      ? 'nani-result-card image-stage-error'
+                      : 'nani-result-card'
+                  }
+                  aria-busy={imageStage.phase !== 'error'}
+                >
+                  {imageStage.phase === 'error' ? (
+                    <div className="nani-error" role="alert">
+                      <span>{imageStage.message}</span>
+                      {imageStage.action?.type === 'model' && (
+                        <button
+                          className="text-button image-model-retry"
+                          type="button"
+                          onClick={() => {
+                            const action = imageStage.action;
+                            if (action?.type === 'model') readImage(action.file, 'model');
+                          }}
+                        >
+                          {t('common.readWithAi')}
+                        </button>
+                      )}
+                      {imageStage.action?.type === 'settings' && (
+                        <button className="text-button" type="button" onClick={openSettings}>
+                          {t('common.settings')}
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="nani-loading-lines" aria-hidden="true">
+                      <span />
+                      <span />
+                    </div>
+                  )}
+                </article>
+              </section>
             </>
           )}
           {/* 読み取り中も入力欄はunmountせず隠すだけにする。書き起こし文は入力欄へ追記してから
@@ -1089,6 +1166,7 @@ function Composer({
                 </div>
               )}
               <InlineContextEditor
+                key={editorKey}
                 ref={editorRef}
                 label={mode === 'conversation' ? t('main.messageLabel') : t('main.textLabel')}
                 placeholder={
@@ -1158,16 +1236,8 @@ function Composer({
         </>
       )}
       {submitError && (
-        <p
-          className={imageUnsupportedModel ? 'inline-error image-input-error' : 'inline-error'}
-          role="alert"
-        >
-          <span>{submitError}</span>
-          {imageUnsupportedModel && (
-            <button className="text-button" type="button" onClick={openSettings}>
-              {t('common.settings')}
-            </button>
-          )}
+        <p className="inline-error" role="alert">
+          {submitError}
         </p>
       )}
       {showingConversationResult && activeConversationTurn !== null ? (
@@ -1243,13 +1313,38 @@ function Composer({
           </button>
         </div>
       )}
-      <p className="hotkey-hint">
-        <span />{' '}
-        <kbd>
-          {displayAccelerator(status.hotkey, t('common.notConfigured')).replaceAll(' + ', ' ')}
-        </kbd>{' '}
-        {t('main.selectionHint')}
-      </p>
+      {!showingResult &&
+        !showingImageStage &&
+        (showTranslationShortcutHint || showScreenshotShortcutHint) && (
+          <div className="hotkey-hints">
+            {showTranslationShortcutHint && (
+              <p className="hotkey-hint">
+                <span />
+                <kbd>
+                  {displayAccelerator(status.hotkey, t('common.notConfigured')).replaceAll(
+                    ' + ',
+                    ' ',
+                  )}
+                </kbd>
+                {t('main.selectionHint')}
+              </p>
+            )}
+            {showScreenshotShortcutHint &&
+              settings !== null &&
+              settings.screenshotShortcut !== null && (
+                <p className="hotkey-hint">
+                  <span />
+                  <kbd>
+                    {displayAccelerator(
+                      settings.screenshotShortcut,
+                      t('common.notConfigured'),
+                    ).replaceAll(' + ', ' ')}
+                  </kbd>
+                  {t('main.screenshotHint')}
+                </p>
+              )}
+          </div>
+        )}
     </div>
   );
 }
@@ -1682,6 +1777,7 @@ export function MainView(): React.JSX.Element {
               <SettingsView
                 key={settingsTarget}
                 settings={settingsState.settings}
+                screenshotHotkeyState={status.screenshotHotkeyState}
                 close={closeSettings}
                 openWritingStylesOnMount={settingsTarget === 'writing-styles'}
               />

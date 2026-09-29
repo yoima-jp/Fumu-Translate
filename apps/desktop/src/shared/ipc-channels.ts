@@ -10,6 +10,7 @@ export const IPC_CHANNELS = {
   appExtractImageText: 'app:extract-image-text',
   appCancelImageTextExtraction: 'app:cancel-image-text-extraction',
   screenCaptureComplete: 'screen-capture:complete',
+  screenCaptureRetryWithModel: 'screen-capture:retry-with-model',
   popupStateChanged: 'popup:state-changed',
   popupClose: 'popup:close',
   popupCopy: 'popup:copy',

@@ -29,6 +29,7 @@ import type {
   SettingsSnapshot,
   WritingStyle,
 } from '../../../shared/settings-contracts';
+import type { HotkeyRegistrationState } from '../../../shared/contracts';
 import { wrappedFocusIndex } from '../soft-select-navigation';
 import { ProviderModelSettings } from './ProviderModelSettings';
 import { useI18n } from '../i18n';
@@ -305,7 +306,13 @@ function acceleratorFromEvent(event: React.KeyboardEvent): string | null {
   return [...modifiers, key].join('+');
 }
 
-function ShortcutSettings({ settings }: { settings: SettingsSnapshot }) {
+function ShortcutSettings({
+  settings,
+  screenshotHotkeyState,
+}: {
+  settings: SettingsSnapshot;
+  screenshotHotkeyState: HotkeyRegistrationState;
+}) {
   const { t } = useI18n();
   const [shortcut, setShortcut] = useState(settings.shortcut);
   const [screenshotShortcut, setScreenshotShortcut] = useState(settings.screenshotShortcut);
@@ -492,6 +499,13 @@ function ShortcutSettings({ settings }: { settings: SettingsSnapshot }) {
       {message && (
         <p className="field-message" role="status">
           {message}
+        </p>
+      )}
+      {screenshotShortcut !== null && screenshotHotkeyState !== 'registered' && (
+        <p className="field-message" role="alert">
+          {screenshotHotkeyState === 'conflict'
+            ? t('settings.shortcutConflict')
+            : t('settings.shortcutInvalid')}
         </p>
       )}
     </section>
@@ -1087,10 +1101,12 @@ function WritingStyleSettings({
 
 export function SettingsView({
   settings,
+  screenshotHotkeyState,
   close,
   openWritingStylesOnMount = false,
 }: {
   settings: SettingsSnapshot;
+  screenshotHotkeyState: HotkeyRegistrationState;
   close?: () => void;
   openWritingStylesOnMount?: boolean;
 }): React.JSX.Element {
@@ -1189,7 +1205,7 @@ export function SettingsView({
           )}
         </header>
         <GeneralSettings settings={settings} onManageWritingStyles={openWritingStyles} />
-        <ShortcutSettings settings={settings} />
+        <ShortcutSettings settings={settings} screenshotHotkeyState={screenshotHotkeyState} />
         <section className="settings-section nani-settings-card">
           <div className="settings-line">
             <span>

@@ -9,6 +9,7 @@ import type {
 } from '@fumu/translation-core';
 import type {
   Point,
+  PopupErrorMessageKey,
   PopupResizeRequest,
   PopupViewState,
   Rectangle,
@@ -289,10 +290,21 @@ export class PopupWindowManager {
     this.#showInteractive(window);
   }
 
-  showError(requestId: string, message: string): void {
+  showError(
+    requestId: string,
+    message: string,
+    action: 'open-clipboard' | 'retry-image-with-model' = 'open-clipboard',
+    messageKey?: PopupErrorMessageKey,
+  ): void {
     const window = this.#requiredWindow();
     this.#activeSurface = 'popup';
-    this.#popupState = { phase: 'error', requestId, message };
+    this.#popupState = {
+      phase: 'error',
+      requestId,
+      message,
+      action,
+      ...(messageKey === undefined ? {} : { messageKey }),
+    };
     this.#size = MANUAL_SIZE;
     this.#applyBounds();
     this.#sendPopupState();
@@ -509,6 +521,11 @@ export class PopupWindowManager {
       kind: 'screen-center',
       point: workAreaCenter(primaryWorkArea),
     };
-    this.showError(requestId, '選択を取得できませんでした。');
+    this.showError(
+      requestId,
+      '選択を取得できませんでした。',
+      'open-clipboard',
+      'popup.selectionError',
+    );
   }
 }

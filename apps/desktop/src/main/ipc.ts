@@ -16,6 +16,7 @@ import {
 import { MAX_CLIPBOARD_TEXT_CODE_POINTS, type AppController } from './app-controller';
 import type {
   ImageInputPayload,
+  ImageTextExtractionMode,
   ImageTextExtractionOutcome,
   ScreenCaptureSelection,
 } from '../shared/contracts';
@@ -112,6 +113,7 @@ const imageInputPayloadSchema = z
   })
   .strict();
 const screenshotShortcutSchema = z.union([shortcutSchema, z.null()]);
+const imageTextExtractionModeSchema = z.enum(['configured', 'model']);
 const screenCaptureSelectionSchema: z.ZodType<ScreenCaptureSelection | null> = z.union([
   z.null(),
   z
@@ -170,21 +172,26 @@ export function registerIpcHandlers(
     mainOnly(event);
     return updates.download();
   });
-  ipcMain.handle(IPC_CHANNELS.appExtractImageText, async (event, input: unknown) => {
-    mainOnly(event);
-    const parsed = imageInputPayloadSchema.safeParse(input);
-    if (!parsed.success) {
-      const outcome: ImageTextExtractionOutcome = {
-        status: 'failed',
-        code: 'invalid-image',
-        message: '画像を読み取れませんでした。',
-        retryable: false,
-      };
-      return outcome;
-    }
-    const image: ImageInputPayload = parsed.data;
-    return controller.extractImageText(image);
-  });
+  ipcMain.handle(
+    IPC_CHANNELS.appExtractImageText,
+    async (event, input: unknown, modeInput: unknown) => {
+      mainOnly(event);
+      const parsed = imageInputPayloadSchema.safeParse(input);
+      if (!parsed.success) {
+        const outcome: ImageTextExtractionOutcome = {
+          status: 'failed',
+          code: 'invalid-image',
+          message: '画像を読み取れませんでした。',
+          retryable: false,
+        };
+        return outcome;
+      }
+      const image: ImageInputPayload = parsed.data;
+      const mode: ImageTextExtractionMode =
+        imageTextExtractionModeSchema.optional().parse(modeInput) ?? 'configured';
+      return controller.extractImageText(image, mode);
+    },
+  );
   ipcMain.handle(IPC_CHANNELS.appCancelImageTextExtraction, (event) => {
     mainOnly(event);
     controller.cancelImageTextExtraction();
@@ -192,6 +199,10 @@ export function registerIpcHandlers(
   ipcMain.handle(IPC_CHANNELS.screenCaptureComplete, (event, input: unknown) => {
     assertTrustedSender(event, ['screen-capture']);
     screenRegionCapture.complete(event.sender, screenCaptureSelectionSchema.parse(input));
+  });
+  ipcMain.handle(IPC_CHANNELS.screenCaptureRetryWithModel, async (event) => {
+    assertTrustedSender(event, ['popup']);
+    await controller.retryScreenCaptureWithModel();
   });
   const popupOnly = (event: IpcMainInvokeEvent): 'popup' => assertTrustedSender(event, ['popup']);
   const eitherWindow = (event: IpcMainInvokeEvent): 'main' | 'popup' =>
@@ -382,6 +393,7 @@ export function registerIpcHandlers(
     ipcMain.removeHandler(IPC_CHANNELS.appExtractImageText);
     ipcMain.removeHandler(IPC_CHANNELS.appCancelImageTextExtraction);
     ipcMain.removeHandler(IPC_CHANNELS.screenCaptureComplete);
+    ipcMain.removeHandler(IPC_CHANNELS.screenCaptureRetryWithModel);
     ipcMain.removeHandler(IPC_CHANNELS.appGetStatus);
     ipcMain.removeHandler(IPC_CHANNELS.appTriggerClipboard);
     ipcMain.removeHandler(IPC_CHANNELS.appRestart);
