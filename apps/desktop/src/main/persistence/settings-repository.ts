@@ -1,5 +1,6 @@
 import {
   APPEARANCE_VALUES,
+  DEFAULT_SCREENSHOT_SHORTCUT,
   DEFAULT_TRANSLATE_SHORTCUT,
   DEFAULT_WRITING_STYLES,
   distinctTranslationTarget,
@@ -16,6 +17,7 @@ import {
   type NativeLanguage,
   type OtherLanguageTarget,
   type TranslationStyle,
+  type ImageTextRecognition,
   type ProviderConnection,
   type ProviderConnectionDefinition,
   type UsedModelReference,
@@ -92,6 +94,16 @@ export class SettingsRepository {
     return this.#getSetting('shortcut') ?? DEFAULT_TRANSLATE_SHORTCUT;
   }
 
+  /**
+   * nullはスクリーンショット翻訳が無効。未保存（初回起動や更新直後）は既定キーで有効にし、
+   * ユーザーが明示的に無効化した場合だけ空文字で保存して区別する。
+   */
+  get screenshotShortcut(): string | null {
+    const value = this.#getSetting('screenshotShortcut');
+    if (value === null) return DEFAULT_SCREENSHOT_SHORTCUT;
+    return value.length === 0 ? null : value;
+  }
+
   get historyEnabled(): boolean {
     return this.#getSetting('history_enabled') !== 'false';
   }
@@ -102,6 +114,15 @@ export class SettingsRepository {
 
   get enterToSend(): boolean {
     return this.#getSetting('enter_to_send') === 'true';
+  }
+
+  get imageTextRecognition(): ImageTextRecognition {
+    const value = this.#getSetting('image_text_recognition');
+    return value === 'model' ? 'model' : 'system';
+  }
+
+  setImageTextRecognition(value: ImageTextRecognition): void {
+    this.#setSetting('image_text_recognition', value);
   }
 
   get compactTranslation(): boolean {
@@ -268,6 +289,10 @@ export class SettingsRepository {
 
   setShortcut(shortcut: string): void {
     this.#setSetting('shortcut', shortcut);
+  }
+
+  setScreenshotShortcut(shortcut: string | null): void {
+    this.#setSetting('screenshotShortcut', shortcut ?? '');
   }
 
   setGeneralSettings(

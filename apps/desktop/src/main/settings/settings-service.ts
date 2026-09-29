@@ -147,8 +147,10 @@ export class SettingsService {
   get snapshot(): SettingsSnapshot {
     return {
       shortcut: this.#repository.shortcut,
+      screenshotShortcut: this.#repository.screenshotShortcut,
       historyEnabled: this.#repository.historyEnabled,
       compactTranslation: this.#repository.compactTranslation,
+      imageTextRecognition: this.#repository.imageTextRecognition,
       developerMode: this.#repository.developerMode,
       debugMode: this.#repository.debugMode,
       enterToSend: this.#repository.enterToSend,
@@ -176,6 +178,11 @@ export class SettingsService {
 
   setShortcut(shortcut: string): SettingsSnapshot {
     this.#repository.setShortcut(shortcut);
+    return this.#publish();
+  }
+
+  setScreenshotShortcut(shortcut: string | null): SettingsSnapshot {
+    this.#repository.setScreenshotShortcut(shortcut);
     return this.#publish();
   }
 
@@ -224,6 +231,9 @@ export class SettingsService {
         next.compactTranslation,
         next.developerMode,
       );
+      if (update.imageTextRecognition !== undefined) {
+        this.#repository.setImageTextRecognition(update.imageTextRecognition);
+      }
     } catch (error) {
       try {
         if (startupChanged) this.#startup.setEnabled(previousStartup);

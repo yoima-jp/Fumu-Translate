@@ -812,6 +812,11 @@ textarea {
   box-shadow: 0 3px 10px rgb(41 76 31 / 6%);
 }
 
+.nani-result-actions {
+  display: grid;
+  gap: 8px;
+}
+
 .nani-composer-shell > header {
   display: flex;
   height: 48px;
@@ -886,6 +891,13 @@ textarea {
   position: relative;
   width: 100%;
   height: 150px;
+}
+
+.inline-context-editor-shell.image-drag-active {
+  background: color-mix(in srgb, var(--fumu-brand-action) 4%, transparent);
+  border-radius: 8px;
+  outline: 1px dashed color-mix(in srgb, var(--fumu-brand-action) 48%, transparent);
+  outline-offset: 4px;
 }
 
 .inline-context-editor {
@@ -1799,8 +1811,33 @@ textarea {
 .translation-mode-cards {
   display: grid;
   margin-top: 38px;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 22px;
+}
+
+/* どの画面でも画像をドロップできることを示す。ドロップ自体はdocumentで受けるため、
+   overlayはpointer操作を奪わない。 */
+.image-drop-overlay {
+  position: fixed;
+  z-index: 60;
+  display: flex;
+  inset: 10px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--fumu-accent);
+  font-size: 14px;
+  font-weight: 700;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--nani-canvas) 82%, transparent);
+  border: 2px dashed var(--fumu-accent);
+  border-radius: 22px;
+}
+
+/* 画像の読み取り中は入力欄をunmountせずに隠す。classのdisplay指定がhidden属性より優先されるため明示する。 */
+.nani-composer-shell[hidden] {
+  display: none;
 }
 
 .mode-card {
@@ -1936,6 +1973,58 @@ textarea {
 }
 .nani-source-card .nani-icon-button {
   margin-left: auto;
+}
+/* 編集とコピーを並べたときは、先頭のボタンだけで右寄せする。 */
+.nani-source-card .nani-icon-button + .nani-icon-button {
+  margin-left: 0;
+}
+.nani-source-image {
+  display: block;
+  max-width: min(100%, 220px);
+  max-height: 140px;
+  margin-bottom: 14px;
+  object-fit: contain;
+  border: 1px solid var(--nani-line);
+  border-radius: 12px;
+}
+.nani-source-text {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.nani-source-text > p {
+  flex: 1;
+  min-width: 0;
+}
+.nani-source-text > p.collapsed {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.nani-source-editor textarea {
+  width: 100%;
+  min-height: 120px;
+  padding: 10px 12px;
+  color: var(--nani-ink);
+  font: inherit;
+  font-size: 16px;
+  line-height: 1.8;
+  background: var(--nani-soft);
+  border: 1px solid var(--nani-line);
+  border-radius: 12px;
+  resize: vertical;
+}
+.nani-source-editor textarea:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.nani-source-editor-actions {
+  display: flex;
+  margin-top: 10px;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
 }
 .translation-arrived {
   display: flex;
@@ -2793,6 +2882,20 @@ button.style-row {
 .settings-modal .field-message {
   margin: 2px 0 8px 35px;
   color: var(--nani-muted);
+}
+
+.inline-error.image-input-error {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 3px 8px;
+}
+
+.image-input-error .text-button {
+  min-height: 26px;
+  padding: 0 5px;
+  color: #9d403a;
+  text-decoration: underline;
 }
 
 .settings-modal .text-button {

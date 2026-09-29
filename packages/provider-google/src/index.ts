@@ -3,6 +3,7 @@ import {
   createProviderHttpStatusError as statusError,
   LlmProviderError,
   type FetchLike,
+  type LlmImageInput,
   type LlmClient,
   type LlmRequest,
   type LlmSession,
@@ -26,6 +27,15 @@ interface NormalizedConfig {
 
 const API_VERSION = 'v1beta';
 
+type GeminiContentPart =
+  | { readonly text: string }
+  | {
+      readonly inlineData: {
+        readonly mimeType: LlmImageInput['mediaType'];
+        readonly data: string;
+      };
+    };
+
 function configurationError(message: string, cause?: unknown): LlmProviderError {
   return new LlmProviderError(message, {
     code: 'invalid-configuration',
@@ -39,6 +49,25 @@ function providerPayloadError(message: string): LlmProviderError {
     code: 'invalid-response',
     retryable: true,
   });
+}
+
+function unsupportedInputError(message: string, status?: number): LlmProviderError {
+  return new LlmProviderError(message, {
+    code: 'unsupported-input',
+    retryable: false,
+    ...(status === undefined ? {} : { status }),
+  });
+}
+
+function isUnsupportedImageInput(details: string): boolean {
+  const mentionsImageCapability = /\b(?:images?|inline[_\s-]?data|modalit(?:y|ies))\b/iu.test(
+    details,
+  );
+  const rejectsSupport =
+    /\b(?:unsupported|not\s+supported|does\s+not\s+support|doesn't\s+support|do\s+not\s+support|don't\s+support|only\s+supports|not\s+allowed|not\s+available)\b/iu.test(
+      details,
+    );
+  return mentionsImageCapability && rejectsSupport;
 }
 
 function unknownRecord(value: unknown): Record<string, unknown> | null {
@@ -209,6 +238,19 @@ export class GoogleGeminiClient implements LlmClient {
   }
 
   async createSession(request: LlmRequest): Promise<LlmSession> {
+    // Geminiの画像入力はuser contentにだけ対応する。型境界外の画像を無視すると、
+    // 画像なしの要求として送られて誤った文字起こしを返す可能性があるため拒否する。
+    if (
+      request.messages.some(
+        (message) => message.role !== 'user' && (message.images?.length ?? 0) > 0,
+      )
+    ) {
+      throw unsupportedInputError('Gemini accepts images only on user messages.');
+    }
+
+    const hasImageInput = request.messages.some(
+      (message) => message.role === 'user' && (message.images?.length ?? 0) > 0,
+    );
     const abortController = new AbortController();
     const abortFromCaller = (): void => {
       abortController.abort(request.signal?.reason);
@@ -237,11 +279,23 @@ export class GoogleGeminiClient implements LlmClient {
     }
 
     const systemTexts: string[] = [];
-    const contents: { role: string; parts: { text: string }[] }[] = [];
+    const contents: { role: string; parts: GeminiContentPart[] }[] = [];
     for (const message of request.messages) {
       if (message.role === 'system') {
         systemTexts.push(message.content);
       } else {
+        const images = message.role === 'user' ? message.images : undefined;
+        if (images !== undefined && images.length > 0) {
+          // Geminiはpartsの順序を保持する。画像を先に並べ、空文字列は余計なtext partにしない。
+          const parts: GeminiContentPart[] = images.map((image) => ({
+            inlineData: { mimeType: image.mediaType, data: image.base64Data },
+          }));
+          if (message.content.length > 0) {
+            parts.push({ text: message.content });
+          }
+          contents.push({ role: 'user', parts });
+          continue;
+        }
         contents.push({
           role: message.role === 'assistant' ? 'model' : 'user',
           parts: [{ text: message.content }],
@@ -301,6 +355,12 @@ export class GoogleGeminiClient implements LlmClient {
           if (abortController.signal.aborted) throw error;
           return '';
         });
+        if (hasImageInput && response.status === 400 && isUnsupportedImageInput(details)) {
+          throw unsupportedInputError(
+            'The selected Gemini model does not support image input.',
+            response.status,
+          );
+        }
         throw statusError(response.status, details);
       } finally {
         removeExternalAbortListener();

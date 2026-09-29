@@ -14,6 +14,11 @@ import {
   validateInlineTranslationContexts,
 } from '@fumu/translation-core';
 import { MAX_CLIPBOARD_TEXT_CODE_POINTS, type AppController } from './app-controller';
+import type {
+  ImageInputPayload,
+  ImageTextExtractionOutcome,
+  ScreenCaptureSelection,
+} from '../shared/contracts';
 import { IPC_CHANNELS } from '../shared/ipc-channels';
 import {
   generalSettingsUpdateSchema,
@@ -25,6 +30,7 @@ import {
   writingStyleInstructionSchema,
 } from './settings/profile-schema';
 import { assertRendererAccess, rendererEntryUrls, type RendererKind } from './ipc-sender-policy';
+import type { ScreenRegionCaptureService } from './os/screenshot/screen-region-capture';
 import {
   MAX_APPLIED_TRANSLATION_INSTRUCTION_CODE_POINTS,
   MAX_APPLIED_TRANSLATION_INSTRUCTIONS,
@@ -99,20 +105,39 @@ const historyQuerySchema = z
   })
   .strict();
 const historyIdSchema = z.uuid();
+const imageInputPayloadSchema = z
+  .object({
+    mediaType: z.enum(['image/png', 'image/jpeg']),
+    data: z.instanceof(Uint8Array),
+  })
+  .strict();
+const screenshotShortcutSchema = z.union([shortcutSchema, z.null()]);
+const screenCaptureSelectionSchema: z.ZodType<ScreenCaptureSelection | null> = z.union([
+  z.null(),
+  z
+    .object({
+      x: z.number().finite(),
+      y: z.number().finite(),
+      width: z.number().finite().positive(),
+      height: z.number().finite().positive(),
+    })
+    .strict(),
+]);
 
 export function registerIpcHandlers(
   controller: AppController,
   rendererUrl: string | undefined,
+  screenRegionCapture: ScreenRegionCaptureService,
 ): () => void {
   const expectedRendererUrls = rendererEntryUrls(
     rendererUrl,
     join(__dirname, '../renderer/index.html'),
   );
 
-  const assertTrustedSender = (
+  const assertTrustedSender = <Kind extends RendererKind>(
     event: IpcMainInvokeEvent,
-    allowedKinds: readonly RendererKind[],
-  ): RendererKind => {
+    allowedKinds: readonly Kind[],
+  ): Kind => {
     const frame = event.senderFrame;
     return assertRendererAccess(
       frame?.url ?? '',
@@ -122,8 +147,7 @@ export function registerIpcHandlers(
     );
   };
 
-  const mainOnly = (event: IpcMainInvokeEvent): RendererKind =>
-    assertTrustedSender(event, ['main']);
+  const mainOnly = (event: IpcMainInvokeEvent): 'main' => assertTrustedSender(event, ['main']);
   const updates = new ReleaseUpdates({
     version: app.getVersion(),
     architecture: process.arch,
@@ -146,9 +170,31 @@ export function registerIpcHandlers(
     mainOnly(event);
     return updates.download();
   });
-  const popupOnly = (event: IpcMainInvokeEvent): RendererKind =>
-    assertTrustedSender(event, ['popup']);
-  const eitherWindow = (event: IpcMainInvokeEvent): RendererKind =>
+  ipcMain.handle(IPC_CHANNELS.appExtractImageText, async (event, input: unknown) => {
+    mainOnly(event);
+    const parsed = imageInputPayloadSchema.safeParse(input);
+    if (!parsed.success) {
+      const outcome: ImageTextExtractionOutcome = {
+        status: 'failed',
+        code: 'invalid-image',
+        message: '画像を読み取れませんでした。',
+        retryable: false,
+      };
+      return outcome;
+    }
+    const image: ImageInputPayload = parsed.data;
+    return controller.extractImageText(image);
+  });
+  ipcMain.handle(IPC_CHANNELS.appCancelImageTextExtraction, (event) => {
+    mainOnly(event);
+    controller.cancelImageTextExtraction();
+  });
+  ipcMain.handle(IPC_CHANNELS.screenCaptureComplete, (event, input: unknown) => {
+    assertTrustedSender(event, ['screen-capture']);
+    screenRegionCapture.complete(event.sender, screenCaptureSelectionSchema.parse(input));
+  });
+  const popupOnly = (event: IpcMainInvokeEvent): 'popup' => assertTrustedSender(event, ['popup']);
+  const eitherWindow = (event: IpcMainInvokeEvent): 'main' | 'popup' =>
     assertTrustedSender(event, ['main', 'popup']);
 
   ipcMain.handle(IPC_CHANNELS.appGetStatus, (event) => {
@@ -254,9 +300,9 @@ export function registerIpcHandlers(
   });
 
   ipcMain.handle(IPC_CHANNELS.settingsGet, (event) => {
-    // Popupもメインと同じ外見設定を描画するため、信頼済みRendererには読み取りだけ許可する。
-    // ショートカットやプロバイダー等の更新IPCは引き続きmainOnlyのままにする。
-    eitherWindow(event);
+    // Popupと範囲選択overlayもメインと同じ外見・表示言語で描画するため、信頼済みRendererには
+    // 読み取りだけ許可する。ショートカットやプロバイダー等の更新IPCは引き続きmainOnlyのままにする。
+    assertTrustedSender(event, ['main', 'popup', 'screen-capture']);
     return controller.settings;
   });
 
@@ -273,6 +319,11 @@ export function registerIpcHandlers(
   ipcMain.handle(IPC_CHANNELS.settingsUpdateShortcut, (event, input: unknown) => {
     mainOnly(event);
     return controller.updateShortcut(shortcutSchema.parse(input));
+  });
+
+  ipcMain.handle(IPC_CHANNELS.settingsUpdateScreenshotShortcut, (event, input: unknown) => {
+    mainOnly(event);
+    return controller.updateScreenshotShortcut(screenshotShortcutSchema.parse(input));
   });
 
   ipcMain.handle(IPC_CHANNELS.settingsUpdateGeneral, (event, input: unknown) => {
@@ -328,6 +379,9 @@ export function registerIpcHandlers(
   return () => {
     ipcMain.removeHandler(IPC_CHANNELS.appCheckUpdates);
     ipcMain.removeHandler(IPC_CHANNELS.appDownloadUpdate);
+    ipcMain.removeHandler(IPC_CHANNELS.appExtractImageText);
+    ipcMain.removeHandler(IPC_CHANNELS.appCancelImageTextExtraction);
+    ipcMain.removeHandler(IPC_CHANNELS.screenCaptureComplete);
     ipcMain.removeHandler(IPC_CHANNELS.appGetStatus);
     ipcMain.removeHandler(IPC_CHANNELS.appTriggerClipboard);
     ipcMain.removeHandler(IPC_CHANNELS.appRestart);
@@ -346,6 +400,7 @@ export function registerIpcHandlers(
     ipcMain.removeHandler(IPC_CHANNELS.settingsBeginShortcutCapture);
     ipcMain.removeHandler(IPC_CHANNELS.settingsEndShortcutCapture);
     ipcMain.removeHandler(IPC_CHANNELS.settingsUpdateShortcut);
+    ipcMain.removeHandler(IPC_CHANNELS.settingsUpdateScreenshotShortcut);
     ipcMain.removeHandler(IPC_CHANNELS.settingsUpdateGeneral);
     ipcMain.removeHandler(IPC_CHANNELS.settingsFetchProviderModels);
     ipcMain.removeHandler(IPC_CHANNELS.settingsLoginChatGpt);

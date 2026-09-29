@@ -1,4 +1,4 @@
-import type { LlmClient } from '@fumu/llm-core';
+import { isAbortError, LlmProviderError, type LlmClient } from '@fumu/llm-core';
 import log from 'electron-log/main';
 import { AnthropicClient } from '@fumu/provider-anthropic';
 import { ChatGptClient } from '@fumu/provider-chatgpt';
@@ -6,12 +6,16 @@ import { GoogleGeminiClient } from '@fumu/provider-google';
 import { OpenAiCompatibleClient } from '@fumu/provider-openai-compatible';
 import {
   StreamingFollowUpService,
+  LlmImageTextExtractionService,
   StreamingTranslationService,
   UnconfiguredFollowUpService,
   UnconfiguredTranslationService,
   type FollowUpEvent,
   type FollowUpRequest,
   type FollowUpService,
+  type ImageTextExtractionRequest,
+  type ImageTextExtractionResult,
+  type ImageTextExtractionService,
   type TranslationEvent,
   type TranslationRequest,
   type TranslationService,
@@ -27,6 +31,7 @@ type DisposableLlmClient = LlmClient & { dispose?: () => Promise<void> };
 interface ServicePair {
   readonly translation: TranslationService;
   readonly followUp: FollowUpService;
+  readonly imageTextExtraction: ImageTextExtractionService | null;
   readonly client: DisposableLlmClient | null;
   readonly providerName: string | null;
   readonly modelName: string | null;
@@ -47,6 +52,7 @@ function servicesForClient(
   return {
     translation: new StreamingTranslationService(client),
     followUp: new StreamingFollowUpService(client),
+    imageTextExtraction: new LlmImageTextExtractionService(client),
     client,
     providerName,
     modelName,
@@ -58,6 +64,7 @@ function unconfiguredServices(): ServicePair {
   return {
     translation: new UnconfiguredTranslationService(),
     followUp: new UnconfiguredFollowUpService(),
+    imageTextExtraction: null,
     client: null,
     providerName: null,
     modelName: null,
@@ -193,6 +200,30 @@ function shouldFallback(event: TranslationEvent | FollowUpEvent): boolean {
 const DEFAULT_MODEL_ATTEMPT_TIMEOUT_MS = 30_000;
 const logger = log.scope('translation-registry');
 
+class UnconfiguredImageTextExtractionError extends Error {
+  readonly code = 'provider-not-configured' as const;
+  readonly retryable = false;
+
+  constructor() {
+    super('No translation model is configured.');
+    this.name = 'UnconfiguredImageTextExtractionError';
+  }
+}
+
+function abortError(): DOMException {
+  return new DOMException('Image text extraction was aborted.', 'AbortError');
+}
+
+function imageExtractionErrorDetails(error: unknown): {
+  readonly code: string;
+  readonly retryable: boolean;
+} {
+  if (error instanceof LlmProviderError) {
+    return { code: error.code, retryable: error.retryable };
+  }
+  return { code: 'unknown', retryable: true };
+}
+
 async function nextEventWithTimeout<T>(
   iterator: AsyncIterator<T>,
   timeoutMs: number,
@@ -261,6 +292,91 @@ export class LanguageServiceRegistry
     const completed = this.#completedModels.get(requestId) ?? null;
     this.#completedModels.delete(requestId);
     return completed;
+  }
+
+  async extractImageText(request: ImageTextExtractionRequest): Promise<ImageTextExtractionResult> {
+    if (this.#active.length === 0) throw new UnconfiguredImageTextExtractionError();
+
+    // 画像要求も翻訳と同じ開始時点の候補順に固定し、設定変更の影響を途中で受けない。
+    const candidates = this.#active;
+    let lastError: unknown;
+    for (let index = 0; index < candidates.length; index += 1) {
+      const service = candidates[index]!;
+      const imageTextExtraction = service.imageTextExtraction;
+      if (imageTextExtraction === null) continue;
+      if (request.signal?.aborted) throw abortError();
+
+      const attemptController = new AbortController();
+      const abortAttempt = (): void => attemptController.abort(request.signal?.reason);
+      let timeout: NodeJS.Timeout | null = null;
+      let resolveAborted!: (value: { readonly type: 'aborted' }) => void;
+      const aborted = new Promise<{ readonly type: 'aborted' }>((resolve) => {
+        resolveAborted = resolve;
+      });
+      const onAbort = (): void => {
+        abortAttempt();
+        resolveAborted({ type: 'aborted' });
+      };
+      const signal = request.signal;
+      if (signal !== undefined) {
+        signal.addEventListener('abort', onAbort, { once: true });
+        if (signal.aborted) onAbort();
+      }
+      try {
+        const timedOut = new Promise<{ readonly type: 'timeout' }>((resolve) => {
+          timeout = setTimeout(() => resolve({ type: 'timeout' }), this.#modelAttemptTimeoutMs);
+          timeout.unref();
+        });
+        const extraction = Promise.resolve()
+          .then(() => {
+            if (attemptController.signal.aborted) throw abortError();
+            return imageTextExtraction.extract({
+              ...request,
+              signal: attemptController.signal,
+            });
+          })
+          .then(
+            (value) => ({ type: 'completed' as const, value }),
+            (error: unknown) => ({ type: 'failed' as const, error }),
+          );
+        const result = await Promise.race([extraction, timedOut, aborted]);
+        if (signal?.aborted) throw abortError();
+        if (result.type === 'aborted') throw abortError();
+        if (result.type === 'completed') {
+          return result.value;
+        }
+
+        if (result.type === 'timeout') {
+          attemptController.abort(new DOMException('Model attempt timed out.', 'TimeoutError'));
+          lastError = new LlmProviderError('The image text extraction attempt timed out.', {
+            code: 'network',
+            retryable: true,
+          });
+        } else {
+          lastError = result.error;
+        }
+      } catch (error) {
+        if (request.signal?.aborted || isAbortError(error)) throw abortError();
+        lastError = error;
+      } finally {
+        if (timeout !== null) clearTimeout(timeout);
+        signal?.removeEventListener('abort', onAbort);
+      }
+
+      const { code, retryable } = imageExtractionErrorDetails(lastError);
+      logger.warn('Image text extraction model attempt failed', {
+        providerName: service.providerName,
+        modelName: service.modelName,
+        code,
+        retryable,
+      });
+      // 画像を読めるかはmodelごとに違い、読めない場合の応答もProviderごとにまちまちで
+      // 'unsupported-input'へ分類しきれない（例: DeepInfraのテキスト専用modelは400を'unknown'で返す）。
+      // 候補は別Providerのことも多く認証エラーも候補固有なので、中断以外の失敗はすべて次候補へ進める。
+      if (index + 1 >= candidates.length) throw lastError;
+    }
+    if (lastError !== undefined) throw lastError;
+    throw new UnconfiguredImageTextExtractionError();
   }
 
   async *translate(request: TranslationRequest): AsyncIterable<TranslationEvent> {

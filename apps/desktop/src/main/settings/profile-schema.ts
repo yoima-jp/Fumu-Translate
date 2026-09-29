@@ -13,6 +13,7 @@ import {
   OTHER_LANGUAGE_TARGET_VALUES,
   PROVIDER_KIND_VALUES,
   TRANSLATION_STYLE_VALUES,
+  IMAGE_TEXT_RECOGNITION_VALUES,
 } from '../../shared/settings-contracts';
 
 const idSchema = z.uuid();
@@ -157,6 +158,7 @@ export const generalSettingsUpdateSchema = z
     launchAtLogin: z.boolean().optional(),
     enterToSend: z.boolean().optional(),
     compactTranslation: z.boolean().optional(),
+    imageTextRecognition: z.enum(IMAGE_TEXT_RECOGNITION_VALUES).optional(),
     developerMode: z.boolean().optional(),
     debugMode: z.boolean().optional(),
     translationStyle: z.enum(TRANSLATION_STYLE_VALUES).optional(),

@@ -17,6 +17,8 @@ function providerErrorMessage(error: LlmProviderError): string {
       return '利用上限に達しました。少し待って再試行してください。';
     case 'request-too-large':
       return '文章が長すぎます。範囲を短くしてください。';
+    case 'unsupported-input':
+      return 'このモデルは画像を読み取れません。画像に対応したモデルを選んでください。';
     case 'network':
       return 'ネットワークに接続できません。';
     case 'provider-unavailable':

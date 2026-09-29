@@ -1,6 +1,7 @@
 import { pathToFileURL } from 'node:url';
 
-export type RendererKind = 'main' | 'popup';
+// 'screen-capture' はスクリーンショット翻訳の範囲選択overlay。範囲の返却と設定の読み取り以外は許可しない。
+export type RendererKind = 'main' | 'popup' | 'screen-capture';
 export type RendererEntryUrls = Readonly<Record<RendererKind, string>>;
 
 const DEVELOPMENT_RENDERER_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
@@ -52,6 +53,7 @@ export function rendererEntryUrls(
   return {
     main: withWindowKind(new URL(entry), 'main'),
     popup: withWindowKind(new URL(entry), 'popup'),
+    'screen-capture': withWindowKind(new URL(entry), 'screen-capture'),
   };
 }
 
@@ -61,21 +63,23 @@ export function classifyRendererUrl(
 ): RendererKind | null {
   if (senderUrl === expected.main) return 'main';
   if (senderUrl === expected.popup) return 'popup';
+  if (senderUrl === expected['screen-capture']) return 'screen-capture';
   return null;
 }
 
-export function assertRendererAccess(
+export function assertRendererAccess<Kind extends RendererKind>(
   senderUrl: string,
   isMainFrame: boolean,
   expected: RendererEntryUrls,
-  allowedKinds: readonly RendererKind[],
-): RendererKind {
+  allowedKinds: readonly Kind[],
+): Kind {
   if (!isMainFrame) {
     throw new Error('Rejected IPC from a non-main frame.');
   }
   const kind = classifyRendererUrl(senderUrl, expected);
-  if (kind === null || !allowedKinds.includes(kind)) {
+  const allowed = allowedKinds.find((allowedKind) => allowedKind === kind);
+  if (allowed === undefined) {
     throw new Error('Rejected IPC from an untrusted renderer.');
   }
-  return kind;
+  return allowed;
 }
