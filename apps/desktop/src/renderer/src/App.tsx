@@ -8,6 +8,7 @@ import type { PopupViewState } from '../../shared/contracts';
 import { TranslationResultPanel } from './TranslationResultPanel';
 import { FumuMascot } from './FumuMascot';
 import { I18nProvider, useI18n } from './i18n';
+import { ScreenCaptureOverlay } from './ScreenCaptureOverlay';
 
 // Popupはショートカット後すぐ起動する。設定・履歴・オンボーディングを含む
 // MainViewを別chunkにし、Popup processが不要な画面全体をparseしないようにする。
@@ -193,9 +194,9 @@ export function App(): React.JSX.Element {
 
 function LocalizedApp(): React.JSX.Element {
   const windowKind = new URLSearchParams(window.location.search).get('window');
-  return windowKind === 'popup' ? (
-    <PopupView />
-  ) : (
+  if (windowKind === 'screen-capture') return <ScreenCaptureOverlay />;
+  if (windowKind === 'popup') return <PopupView />;
+  return (
     <Suspense fallback={null}>
       <MainView />
     </Suspense>

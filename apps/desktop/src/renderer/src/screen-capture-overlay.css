@@ -1,0 +1,50 @@
+html.screen-capture-window,
+body.screen-capture-window {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: transparent !important;
+}
+
+.screen-capture-overlay {
+  position: fixed;
+  inset: 0;
+  overflow: visible;
+  background: rgb(0 0 0 / 48%);
+  cursor: crosshair;
+  touch-action: none;
+  user-select: none;
+}
+
+.screen-capture-overlay[data-selecting='true'] {
+  background: transparent;
+}
+
+.screen-capture-guide {
+  position: fixed;
+  top: 18px;
+  left: 50%;
+  z-index: 1;
+  max-width: calc(100vw - 32px);
+  padding: 8px 14px;
+  transform: translateX(-50%);
+  border: 1px solid rgb(255 255 255 / 16%);
+  border-radius: 999px;
+  background: rgb(25 29 32 / 88%);
+  color: #fff;
+  font-size: 13px;
+  line-height: 1.4;
+  text-align: center;
+  pointer-events: none;
+}
+
+.screen-capture-selection {
+  position: fixed;
+  z-index: 0;
+  border: 1px solid #fff;
+  background: rgb(255 255 255 / 8%);
+  box-shadow: 0 0 0 100vmax rgb(0 0 0 / 48%);
+  pointer-events: none;
+}
