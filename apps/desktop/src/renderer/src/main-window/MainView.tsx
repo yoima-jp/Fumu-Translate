@@ -457,6 +457,9 @@ function Composer({
       settings?.nativeLanguage != null;
     if (
       submittingRef.current ||
+      // 画像の読み取り中に手動で翻訳を始めると、読み取り完了時の翻訳開始と競合して
+      // 書き起こし文が入力欄ごと隠れてしまう。読み取り完了側の送信だけを通す。
+      imageExtractionActiveRef.current ||
       !value ||
       !status.translationConfigured ||
       !submittedConversationReady
@@ -554,6 +557,8 @@ function Composer({
     setImageReadingPreview(null);
   };
   const readImage = (file: File): void => {
+    // 翻訳の開始中に読み取りを始めると、開始完了で入力欄が閉じて書き起こし文が翻訳されない。
+    if (submittingRef.current) return;
     setSubmitError(null);
     setImageUnsupportedModel(false);
     const cancelPrevious = imageExtractionActiveRef.current;
@@ -600,6 +605,7 @@ function Composer({
             } else {
               setImageTranslationSource(true);
               setImageSourceEditing(false);
+              imageExtractionActiveRef.current = false;
               // 文脈・文体・翻訳中状態を既存の翻訳開始処理と共有する。
               submitRef.current({ text: nextValue.text });
             }
