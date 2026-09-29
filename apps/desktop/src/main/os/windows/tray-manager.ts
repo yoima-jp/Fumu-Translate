@@ -4,6 +4,7 @@ import { DEFAULT_UI_LOCALE, type UiLocale } from '@fumu/i18n';
 export interface TrayActions {
   readonly showMainWindow: () => void;
   readonly translateClipboard: () => void;
+  readonly translateScreenshot: () => void;
   readonly quit: () => void;
 }
 
@@ -12,6 +13,7 @@ export interface TrayActions {
 interface TrayMenuLabels {
   readonly open: string;
   readonly translateClipboard: string;
+  readonly translateScreenshot: string;
   readonly quit: string;
 }
 
@@ -19,11 +21,13 @@ const TRAY_LABELS: Readonly<Record<UiLocale, TrayMenuLabels>> = Object.freeze({
   en: Object.freeze({
     open: 'Open Fumu!',
     translateClipboard: 'Translate Clipboard',
+    translateScreenshot: 'Translate Screen (Beta)',
     quit: 'Quit',
   }),
   ja: Object.freeze({
     open: 'Fumu!を開く',
     translateClipboard: 'クリップボードを翻訳',
+    translateScreenshot: '画面を翻訳（ベータ）',
     quit: '終了',
   }),
 });
@@ -52,11 +56,15 @@ function trayImage() {
 export function createTrayMenuTemplate(
   actions: TrayActions,
   locale: UiLocale = DEFAULT_UI_LOCALE,
+  screenshotTranslationEnabled = false,
 ): MenuItemConstructorOptions[] {
   const labels = trayLabels(locale);
   return [
     { label: labels.open, click: actions.showMainWindow },
     { label: labels.translateClipboard, click: actions.translateClipboard },
+    ...(screenshotTranslationEnabled
+      ? [{ label: labels.translateScreenshot, click: actions.translateScreenshot }]
+      : []),
     { type: 'separator' },
     { label: labels.quit, click: actions.quit },
   ];
@@ -66,6 +74,7 @@ export class TrayManager {
   readonly #actions: TrayActions;
   #tray: Tray | null = null;
   #locale: UiLocale;
+  #screenshotTranslationEnabled = false;
 
   constructor(actions: TrayActions, locale: UiLocale = DEFAULT_UI_LOCALE) {
     this.#actions = actions;
@@ -74,12 +83,17 @@ export class TrayManager {
 
   /** 母国語設定の変更を動的に反映する。未初期化なら次のinitializeで使われる。 */
   setLocale(locale: UiLocale): void {
+    if (this.#locale === locale) return;
     this.#locale = locale;
     if (this.#tray !== null) {
-      this.#tray.setContextMenu(
-        Menu.buildFromTemplate(createTrayMenuTemplate(this.#actions, locale)),
-      );
+      this.#refreshMenu();
     }
+  }
+
+  setScreenshotTranslationEnabled(enabled: boolean): void {
+    if (this.#screenshotTranslationEnabled === enabled) return;
+    this.#screenshotTranslationEnabled = enabled;
+    if (this.#tray !== null) this.#refreshMenu();
   }
 
   initialize(): void {
@@ -89,7 +103,9 @@ export class TrayManager {
     const tray = new Tray(trayImage());
     tray.setToolTip('Fumu!');
     tray.setContextMenu(
-      Menu.buildFromTemplate(createTrayMenuTemplate(this.#actions, this.#locale)),
+      Menu.buildFromTemplate(
+        createTrayMenuTemplate(this.#actions, this.#locale, this.#screenshotTranslationEnabled),
+      ),
     );
     tray.on('click', this.#actions.showMainWindow);
     this.#tray = tray;
@@ -98,5 +114,13 @@ export class TrayManager {
   dispose(): void {
     this.#tray?.destroy();
     this.#tray = null;
+  }
+
+  #refreshMenu(): void {
+    this.#tray?.setContextMenu(
+      Menu.buildFromTemplate(
+        createTrayMenuTemplate(this.#actions, this.#locale, this.#screenshotTranslationEnabled),
+      ),
+    );
   }
 }
