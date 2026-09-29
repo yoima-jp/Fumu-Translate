@@ -11,6 +11,10 @@ import { isAutostartInvocation } from './launch-mode';
 import { ElectronClipboardService } from './os/clipboard/electron-clipboard-service';
 import { ElectronHotkeyService } from './os/hotkey/electron-hotkey-service';
 import { SelectionHookService } from './os/selection/selection-hook-service';
+import {
+  createScreenRegionCaptureService,
+  type ScreenRegionCaptureService,
+} from './os/screenshot/screen-region-capture';
 import { MainWindowManager } from './os/windows/main-window-manager';
 import { PopupWindowManager } from './os/windows/popup-window-manager';
 import { ElectronStartupService } from './os/windows/electron-startup-service';
@@ -36,9 +40,10 @@ const hasSingleInstanceLock = app.requestSingleInstanceLock();
 let controller: AppController | null = null;
 let removeIpcHandlers: (() => void) | null = null;
 let trayManager: TrayManager | null = null;
-let removeTrayLocaleSubscription: (() => void) | null = null;
+let removeTraySettingsSubscription: (() => void) | null = null;
 let database: FumuDatabase | null = null;
 let languageServices: LanguageServiceRegistry | null = null;
+let screenRegionCapture: ScreenRegionCaptureService | null = null;
 let isQuitting = false;
 let disposed = false;
 let disposal: Promise<void> | null = null;
@@ -152,9 +157,14 @@ async function startApplication(): Promise<void> {
   const popupWindow = new PopupWindowManager(rendererUrl, undefined, (state) =>
     mainWindow.sendPopupState(state),
   );
+  const regionCapture = createScreenRegionCaptureService();
+  screenRegionCapture = regionCapture;
   const appController = new AppController({
     clipboard: new ElectronClipboardService(),
     hotkey: new ElectronHotkeyService(),
+    screenshotHotkey: new ElectronHotkeyService(),
+    screenRegionCapture: regionCapture,
+    imageTextExtraction: registry,
     selection: new SelectionHookService({ maxCodePoints: MAX_TRANSLATION_SOURCE_CODE_POINTS }),
     translation: registry,
     followUp: registry,
@@ -166,7 +176,7 @@ async function startApplication(): Promise<void> {
   });
 
   controller = appController;
-  removeIpcHandlers = registerIpcHandlers(appController, rendererUrl);
+  removeIpcHandlers = registerIpcHandlers(appController, rendererUrl, regionCapture);
   await appController.initialize();
   if (isQuitting || appController.isDisposed || controller !== appController) {
     return;
@@ -180,16 +190,22 @@ async function startApplication(): Promise<void> {
           logger.error('Tray translation request escaped its error boundary', error);
         });
       },
+      translateScreenshot: () => {
+        void appController.triggerScreenshotTranslation().catch((error: unknown) => {
+          logger.error('Tray screenshot translation request escaped its error boundary', error);
+        });
+      },
       quit: () => app.quit(),
     },
     resolveUiLocale(settings.snapshot.nativeLanguage),
   );
+  tray.setScreenshotTranslationEnabled(settings.snapshot.screenshotShortcut !== null);
   tray.initialize();
   trayManager = tray;
-  // 母国語設定の変更をTray文言へ反映する。settings.subscribeはAppControllerも
-  // 使うため、ここでは追加のlistenerとして購読し、shutdownで確実に解除する。
-  removeTrayLocaleSubscription = settings.subscribe((snapshot) => {
+  // Trayの表示言語とベータ項目の有効状態を追従させる。AppControllerの購読とは分け、終了時に解除する。
+  removeTraySettingsSubscription = settings.subscribe((snapshot) => {
     trayManager?.setLocale(resolveUiLocale(snapshot.nativeLanguage));
+    trayManager?.setScreenshotTranslationEnabled(snapshot.screenshotShortcut !== null);
   });
 
   // Playwright injects a Node inspector into Electron and can itself keep the
@@ -219,14 +235,18 @@ function disposeApplication(): Promise<void> {
     removeIpcHandlers = null;
     cleanup(removeHandlers);
     logger.info('IPC handlers removed');
-    const removeLocaleSubscription = removeTrayLocaleSubscription;
-    removeTrayLocaleSubscription = null;
-    cleanup(removeLocaleSubscription);
-    logger.info('Tray locale subscription removed');
+    const removeSettingsSubscription = removeTraySettingsSubscription;
+    removeTraySettingsSubscription = null;
+    cleanup(removeSettingsSubscription);
+    logger.info('Tray settings subscription removed');
     const tray = trayManager;
     trayManager = null;
     cleanup(tray === null ? null : () => tray.dispose());
     logger.info('Tray disposed');
+    const capture = screenRegionCapture;
+    screenRegionCapture = null;
+    cleanup(capture === null ? null : () => capture.dispose());
+    logger.info('Screen region capture disposed');
     const activeController = controller;
     controller = null;
     if (activeController !== null) {

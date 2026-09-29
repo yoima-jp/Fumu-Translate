@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import log from 'electron-log/main';
+import { isAbortError } from '@fumu/llm-core';
 import type {
   ConversationContextTurn,
   FollowUpEvent,
@@ -12,14 +13,19 @@ import type {
   TranslationRequest,
   TranslationResult,
   TranslationService,
+  ImageTextExtractionRequest,
+  ImageTextExtractionResult,
 } from '@fumu/translation-core';
 import {
   MAX_TRANSLATION_SOURCE_CODE_POINTS,
+  toPublicLlmError,
   validateInlineTranslationContexts,
 } from '@fumu/translation-core';
 import type {
   DesktopStatus,
   HotkeyRegistrationState,
+  ImageInputPayload,
+  ImageTextExtractionOutcome,
   Point,
   PopupResizeRequest,
   ResolvedSelection,
@@ -36,14 +42,20 @@ import type {
   FetchProviderModelsRequest,
   ProviderModel,
   SaveProviderRequest,
+  ScreenshotShortcutUpdateResult,
   SettingsSnapshot,
   ShortcutUpdateResult,
   UpdateUsedModelsRequest,
   WritingStyleInstruction,
 } from '../shared/settings-contracts';
 import type { HotkeyRegistration } from './os/hotkey/electron-hotkey-service';
+import type {
+  CapturedScreenRegion,
+  ScreenRegionCaptureService,
+} from './os/screenshot/screen-region-capture';
 import { SelectionTextTooLargeError } from './os/selection/selection-hook-service';
 import { automaticTargetLanguage } from './automatic-target-language';
+import { ImageInputNormalizationError, normalizeImageInput } from './images/normalize-image-input';
 
 export const MAX_CLIPBOARD_TEXT_CODE_POINTS = 100_000;
 const POPUP_DISMISS_HOTKEY = 'Escape';
@@ -112,12 +124,22 @@ export interface SettingsPort {
   readonly snapshot: SettingsSnapshot;
   subscribe(listener: (snapshot: SettingsSnapshot) => void): () => void;
   setShortcut(shortcut: string): SettingsSnapshot;
+  setScreenshotShortcut(shortcut: string | null): SettingsSnapshot;
   updateGeneral(update: GeneralSettingsUpdate): SettingsSnapshot;
   fetchModels(request: FetchProviderModelsRequest): Promise<readonly ProviderModel[]>;
   loginChatGpt(providerId: string): Promise<void>;
   saveProvider(request: SaveProviderRequest): SettingsSnapshot;
   deleteProvider(providerId: string): SettingsSnapshot;
   updateUsedModels(request: UpdateUsedModelsRequest): SettingsSnapshot;
+}
+
+export interface ImageTextExtractionPort {
+  extractImageText(request: ImageTextExtractionRequest): Promise<ImageTextExtractionResult>;
+}
+
+interface ActiveImageTextExtraction {
+  readonly id: string;
+  readonly controller: AbortController;
 }
 
 export interface ProviderStatePort {
@@ -163,6 +185,9 @@ export interface HistoryPort {
 export interface AppControllerDependencies {
   readonly clipboard: ClipboardPort;
   readonly hotkey: HotkeyPort;
+  readonly screenshotHotkey?: HotkeyPort;
+  readonly screenRegionCapture?: Pick<ScreenRegionCaptureService, 'capture'>;
+  readonly imageTextExtraction?: ImageTextExtractionPort;
   readonly selection: SelectionPort;
   readonly translation: TranslationService;
   readonly followUp: FollowUpService;
@@ -183,6 +208,9 @@ export class AppController {
   readonly #logger = log.scope('app-controller');
   readonly #clipboard: ClipboardPort;
   readonly #hotkey: HotkeyPort;
+  readonly #screenshotHotkey: HotkeyPort | null;
+  readonly #screenRegionCapture: Pick<ScreenRegionCaptureService, 'capture'> | null;
+  readonly #imageTextExtraction: ImageTextExtractionPort | null;
   readonly #selection: SelectionPort;
   readonly #translation: TranslationService;
   readonly #followUp: FollowUpService;
@@ -213,6 +241,8 @@ export class AppController {
   #hotkeyState: HotkeyRegistrationState = 'disabled';
   #shortcutCaptureActive = false;
   #hotkeyTriggerActive = false;
+  #screenshotFlowActive = false;
+  #activeImageTextExtraction: ActiveImageTextExtraction | null = null;
   #removeMouseDownListener: (() => void) | null = null;
   #removeSettingsListener: (() => void) | null = null;
   #disposed = false;
@@ -222,6 +252,9 @@ export class AppController {
   constructor(dependencies: AppControllerDependencies) {
     this.#clipboard = dependencies.clipboard;
     this.#hotkey = dependencies.hotkey;
+    this.#screenshotHotkey = dependencies.screenshotHotkey ?? null;
+    this.#screenRegionCapture = dependencies.screenRegionCapture ?? null;
+    this.#imageTextExtraction = dependencies.imageTextExtraction ?? null;
     this.#selection = dependencies.selection;
     this.#translation = dependencies.translation;
     this.#followUp = dependencies.followUp;
@@ -298,6 +331,21 @@ export class AppController {
       this.#triggerSelectionFromHotkey(),
     );
     this.#hotkeyState = registration.state;
+    const screenshotShortcut = this.#settings.snapshot.screenshotShortcut;
+    if (screenshotShortcut !== null && this.#screenshotHotkey !== null) {
+      if (screenshotShortcut === this.#hotkeyAccelerator) {
+        this.#logger.warn('Saved screenshot shortcut conflicts with translation shortcut');
+      } else {
+        const screenshotRegistration = this.#screenshotHotkey.register(screenshotShortcut, () =>
+          this.#triggerScreenshotFromHotkey(),
+        );
+        if (screenshotRegistration.state !== 'registered') {
+          this.#logger.warn('Saved screenshot shortcut could not be registered', {
+            state: screenshotRegistration.state,
+          });
+        }
+      }
+    }
     this.#mainWindow.sendSettings(this.#settings.snapshot);
     this.#publishStatus();
   }
@@ -372,6 +420,14 @@ export class AppController {
     );
   }
 
+  #triggerScreenshotFromHotkey(): void {
+    if (this.#screenshotFlowActive || this.#disposed) return;
+    this.#observeBackground(
+      this.triggerScreenshotTranslation(),
+      'Screenshot translation request escaped its error boundary',
+    );
+  }
+
   async triggerClipboard(): Promise<void> {
     const requestEpoch = this.#beginRequest();
     this.#clearActiveSession();
@@ -398,6 +454,29 @@ export class AppController {
       this.#popup.showManual(requestId, null);
       this.#publishStatus();
     }
+  }
+
+  extractImageText(image: ImageInputPayload): Promise<ImageTextExtractionOutcome> {
+    return this.#runImageTextExtraction(image);
+  }
+
+  cancelImageTextExtraction(): void {
+    this.#activeImageTextExtraction?.controller.abort();
+  }
+
+  triggerScreenshotTranslation(): Promise<void> {
+    if (
+      this.#disposed ||
+      this.#screenshotFlowActive ||
+      this.#screenRegionCapture === null ||
+      this.#imageTextExtraction === null
+    ) {
+      return Promise.resolve();
+    }
+    this.#screenshotFlowActive = true;
+    return this.#runScreenshotTranslation().finally(() => {
+      this.#screenshotFlowActive = false;
+    });
   }
 
   useManualText(input: string): void {
@@ -690,6 +769,7 @@ export class AppController {
       return;
     }
     this.#hotkey.suspend();
+    this.#screenshotHotkey?.suspend();
     this.#shortcutCaptureActive = true;
   }
 
@@ -699,11 +779,22 @@ export class AppController {
     }
     this.#shortcutCaptureActive = false;
     this.#hotkey.resume();
+    this.#screenshotHotkey?.resume();
   }
 
   updateShortcut(shortcut: string): ShortcutUpdateResult {
     const previousAccelerator = this.#hotkeyAccelerator;
     const previousState = this.#hotkeyState;
+    if (
+      this.#settings.snapshot.screenshotShortcut !== null &&
+      shortcut.trim() === this.#settings.snapshot.screenshotShortcut.trim()
+    ) {
+      return {
+        state: 'conflict',
+        shortcut: previousAccelerator,
+        message: 'このショートカットは画面翻訳で使用されています。',
+      };
+    }
     const registration = this.#hotkey.register(shortcut, () => this.#triggerSelectionFromHotkey());
     if (registration.state === 'registered' || registration.state === 'disabled') {
       try {
@@ -743,6 +834,60 @@ export class AppController {
         registration.state === 'conflict'
           ? 'このショートカットは他のアプリで使用されています。'
           : 'このキーの組み合わせは登録できません。',
+    };
+  }
+
+  updateScreenshotShortcut(shortcut: string | null): ScreenshotShortcutUpdateResult {
+    const previousShortcut = this.#settings.snapshot.screenshotShortcut;
+    const accelerator = shortcut?.trim() ?? '';
+    const nextShortcut = accelerator.length === 0 ? null : accelerator;
+    if (nextShortcut !== null && nextShortcut === this.#hotkeyAccelerator.trim()) {
+      return {
+        state: 'conflict',
+        shortcut: previousShortcut,
+        message: '翻訳ショートカットと同じ組み合わせは使えません。',
+      };
+    }
+    if (this.#screenshotHotkey === null) {
+      return {
+        state: 'invalid',
+        shortcut: previousShortcut,
+        message: '画面翻訳を開始できませんでした。',
+      };
+    }
+
+    const registration = this.#screenshotHotkey.register(nextShortcut ?? '', () =>
+      this.#triggerScreenshotFromHotkey(),
+    );
+    if (registration.state !== 'registered' && registration.state !== 'disabled') {
+      return {
+        state: registration.state,
+        shortcut: previousShortcut,
+        message:
+          registration.state === 'conflict'
+            ? 'このショートカットは他のアプリで使用されています。'
+            : 'このキーの組み合わせは登録できません。',
+      };
+    }
+
+    try {
+      this.#settings.setScreenshotShortcut(nextShortcut);
+    } catch (error) {
+      const rollback = this.#screenshotHotkey.register(previousShortcut ?? '', () =>
+        this.#triggerScreenshotFromHotkey(),
+      );
+      if (rollback.state !== 'registered' && rollback.state !== 'disabled') {
+        throw new AggregateError(
+          [error, new Error('The previous screenshot shortcut could not be restored.')],
+          '画面翻訳ショートカットの保存と復元に失敗しました。',
+        );
+      }
+      throw error;
+    }
+    return {
+      state: registration.state,
+      shortcut: nextShortcut,
+      message: null,
     };
   }
 
@@ -813,6 +958,7 @@ export class AppController {
       this.#invalidateRequest();
       this.#clearActiveSession();
     }
+    if (this.#screenshotFlowActive) this.#activeImageTextExtraction?.controller.abort();
     this.#hotkey.unregisterTransient(POPUP_DISMISS_HOTKEY);
     this.#popup.hide();
     this.#publishStatus();
@@ -847,6 +993,7 @@ export class AppController {
     };
 
     this.#invalidateRequest();
+    this.#activeImageTextExtraction?.controller.abort();
     this.#clearActiveSession();
 
     // Native startup may itself be the await that initialization is blocked on.
@@ -872,6 +1019,10 @@ export class AppController {
         this.#logger.warn('Global shortcuts could not be resumed during shutdown', { error });
       }
     }
+    if (this.#screenshotHotkey !== null) {
+      // ElectronHotkeyService.dispose()はprocess全体の登録を解除するため、専用側は自分の1件だけ外す。
+      cleanup(() => this.#screenshotHotkey?.register('', () => undefined));
+    }
     cleanup(() => this.#hotkey.dispose());
     cleanup(() => this.#popup.setDismissHandler(null));
     cleanup(() => this.#popup.dispose());
@@ -884,6 +1035,165 @@ export class AppController {
 
     if (errors.length > 0) {
       throw new AggregateError(errors, 'One or more application resources could not be disposed.');
+    }
+  }
+
+  async #runImageTextExtraction(
+    input: ImageInputPayload | Buffer,
+  ): Promise<ImageTextExtractionOutcome> {
+    // 一度に一枚だけを処理し、後から届いた画像要求が古いOCR結果を置き換える。
+    this.#activeImageTextExtraction?.controller.abort();
+    const active: ActiveImageTextExtraction = {
+      id: randomUUID(),
+      controller: new AbortController(),
+    };
+    this.#activeImageTextExtraction = active;
+
+    try {
+      const image = normalizeImageInput(input);
+      if (active.controller.signal.aborted) return { status: 'cancelled' };
+      if (this.#imageTextExtraction === null) {
+        return {
+          status: 'failed',
+          code: 'provider-not-configured',
+          message: '翻訳モデルを設定してください。',
+          retryable: false,
+        };
+      }
+      const result = await this.#imageTextExtraction.extractImageText({
+        requestId: active.id,
+        images: [image],
+        signal: active.controller.signal,
+      });
+      if (active.controller.signal.aborted) return { status: 'cancelled' };
+      return result;
+    } catch (error) {
+      if (active.controller.signal.aborted || isAbortError(error)) {
+        return { status: 'cancelled' };
+      }
+      if (error instanceof ImageInputNormalizationError) {
+        return {
+          status: 'failed',
+          code: error.code,
+          message:
+            error.code === 'image-too-large'
+              ? '画像が大きすぎます。'
+              : '画像を読み取れませんでした。',
+          retryable: false,
+        };
+      }
+      if (
+        typeof error === 'object' &&
+        error !== null &&
+        'code' in error &&
+        error.code === 'provider-not-configured'
+      ) {
+        return {
+          status: 'failed',
+          code: 'provider-not-configured',
+          message: '翻訳モデルを設定してください。',
+          retryable: false,
+        };
+      }
+      const publicError = toPublicLlmError(error);
+      // 画像bytesとOCR本文は診断ログへ含めず、表示に必要な公開codeだけを記録する。
+      this.#logger.warn('Image text extraction failed', {
+        code: publicError.code,
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+      });
+      return { status: 'failed', ...publicError };
+    } finally {
+      if (this.#activeImageTextExtraction === active) {
+        this.#activeImageTextExtraction = null;
+      }
+    }
+  }
+
+  async #runScreenshotTranslation(): Promise<void> {
+    if (this.#screenRegionCapture === null) return;
+    const requestEpoch = this.#beginRequest();
+    this.#activeImageTextExtraction?.controller.abort();
+    this.#clearActiveSession();
+    this.#hotkey.unregisterTransient(POPUP_DISMISS_HOTKEY);
+    this.#popup.hide();
+    this.#publishStatus();
+
+    let requestId: string | null = null;
+    try {
+      const capture: CapturedScreenRegion | null = await this.#screenRegionCapture.capture();
+      if (!this.#isCurrent(requestEpoch) || capture === null) return;
+
+      const anchor: SelectionAnchor = { kind: 'selection', rect: capture.rect };
+      requestId = randomUUID();
+      this.#activeSurface = 'popup';
+      this.#popup.showCapturing(requestId, anchor);
+      this.#registerPopupDismissHotkey();
+      this.#publishStatus();
+
+      const outcome = await this.#runImageTextExtraction(capture.png);
+      if (!this.#isCurrent(requestEpoch)) return;
+      if (outcome.status === 'cancelled') {
+        this.#clearActiveSession();
+        this.#hotkey.unregisterTransient(POPUP_DISMISS_HOTKEY);
+        this.#popup.hide();
+        this.#publishStatus();
+        return;
+      }
+      if (outcome.status === 'no-text') {
+        this.#clearActiveSession();
+        this.#popup.showError(requestId, '画像から文字が見つかりませんでした。');
+        this.#publishStatus();
+        return;
+      }
+      if (outcome.status === 'failed') {
+        this.#clearActiveSession();
+        this.#popup.showError(requestId, outcome.message);
+        this.#publishStatus();
+        return;
+      }
+
+      if (outcome.text.trim().length === 0) {
+        this.#clearActiveSession();
+        this.#popup.showError(requestId, '画像から文字が見つかりませんでした。');
+        this.#publishStatus();
+        return;
+      }
+      let text: string | null;
+      try {
+        text = this.#validatedSourceText(outcome.text);
+      } catch (error) {
+        if (!(error instanceof SelectionTextTooLargeError)) throw error;
+        this.#clearActiveSession();
+        this.#popup.showError(requestId, '画像から読み取った文字が長すぎます。');
+        this.#publishStatus();
+        return;
+      }
+      if (text === null) {
+        this.#clearActiveSession();
+        this.#popup.showError(requestId, '画像から文字が見つかりませんでした。');
+        this.#publishStatus();
+        return;
+      }
+
+      const selection: ResolvedSelection = {
+        text,
+        programName: null,
+        method: 'screenshot',
+        anchor,
+        acquiredAt: Date.now(),
+      };
+      // OCR本文を翻訳専用の保存経路へ重ねず、通常の選択翻訳へ渡して履歴を一度だけ作る。
+      await this.#showSelectionAndTranslate(requestId, selection, requestEpoch, 'popup');
+    } catch (error) {
+      if (!this.#isCurrent(requestEpoch)) return;
+      this.#logger.warn('Screenshot translation request failed', {
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+      });
+      this.#clearActiveSession();
+      if (requestId !== null) {
+        this.#popup.showError(requestId, '画面を読み取れませんでした。');
+      }
+      this.#publishStatus();
     }
   }
 
@@ -1224,6 +1534,8 @@ export class AppController {
   }
 
   #beginRequest(): number {
+    // 別の翻訳要求が画面OCRを置き換える場合、不要になった画像処理も止める。
+    if (this.#screenshotFlowActive) this.#activeImageTextExtraction?.controller.abort();
     this.#activeRequestAbortController?.abort();
     this.#activeRequestAbortController = null;
     this.#requestEpoch += 1;
@@ -1322,6 +1634,7 @@ export class AppController {
   }
 
   #prepareProviderChange(): void {
+    this.#activeImageTextExtraction?.controller.abort();
     if (this.#popup.isVisible) {
       this.closePopup();
       return;
