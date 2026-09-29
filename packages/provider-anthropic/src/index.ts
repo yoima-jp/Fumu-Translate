@@ -4,6 +4,7 @@ import {
   LlmProviderError,
   type FetchLike,
   type LlmClient,
+  type LlmImageInput,
   type LlmRequest,
   type LlmSession,
   type LlmStreamEvent,
@@ -23,6 +24,22 @@ interface NormalizedConfig {
   readonly apiKey: string | null;
   readonly fetch: FetchLike;
 }
+
+type AnthropicContentBlock =
+  | {
+      readonly type: 'image';
+      readonly source: {
+        readonly type: 'base64';
+        readonly media_type: LlmImageInput['mediaType'];
+        readonly data: string;
+      };
+    }
+  | { readonly type: 'text'; readonly text: string };
+
+type AnthropicMessage = {
+  readonly role: 'user' | 'assistant';
+  readonly content: string | readonly AnthropicContentBlock[];
+};
 
 const API_VERSION = '2023-06-01';
 const DEFAULT_MAX_TOKENS = 1024;
@@ -218,6 +235,13 @@ export class AnthropicClient implements LlmClient {
     const removeExternalAbortListener = (): void => {
       request.signal?.removeEventListener('abort', abortFromCaller);
     };
+    const rejectMisplacedImages = (): never => {
+      removeExternalAbortListener();
+      throw new LlmProviderError('Anthropic accepts images only in user messages.', {
+        code: 'unsupported-input',
+        retryable: false,
+      });
+    };
 
     // APIキーは x-api-key ヘッダにのみ載せる。エラー本文やログへは出力しない。
     const headers: Record<string, string> = {
@@ -235,12 +259,38 @@ export class AnthropicClient implements LlmClient {
     }
 
     const systemTexts: string[] = [];
-    const turns: { role: string; content: string }[] = [];
+    const turns: AnthropicMessage[] = [];
+    let hasImages = false;
+    // 共通型ではroleとimagesの組を制約しないため、APIが受け付けない位置の画像は無視せず失敗させる。
     for (const message of request.messages) {
       if (message.role === 'system') {
+        if (message.images !== undefined && message.images.length > 0) {
+          rejectMisplacedImages();
+        }
         systemTexts.push(message.content);
       } else {
-        turns.push({ role: message.role, content: message.content });
+        if (message.images !== undefined && message.images.length > 0) {
+          if (message.role !== 'user') {
+            rejectMisplacedImages();
+          }
+
+          hasImages = true;
+          // 画像は公式推奨どおりテキストより前に並べ、空の指示文はblockにしない。
+          const content: AnthropicContentBlock[] = message.images.map((image) => ({
+            type: 'image',
+            source: {
+              type: 'base64',
+              media_type: image.mediaType,
+              data: image.base64Data,
+            },
+          }));
+          if (message.content.length > 0) {
+            content.push({ type: 'text', text: message.content });
+          }
+          turns.push({ role: message.role, content });
+        } else {
+          turns.push({ role: message.role, content: message.content });
+        }
       }
     }
 
@@ -290,6 +340,15 @@ export class AnthropicClient implements LlmClient {
           if (abortController.signal.aborted) throw error;
           return '';
         });
+        // 画像を含む要求への400で画像対応を示す本文がある場合だけ、model非対応として扱う。
+        // テキストだけの要求や他のHTTPエラーは共通のstatus分類を維持する。
+        if (hasImages && response.status === 400 && /image|vision/iu.test(details)) {
+          throw new LlmProviderError('The selected model does not support image input.', {
+            code: 'unsupported-input',
+            retryable: false,
+            status: response.status,
+          });
+        }
         throw statusError(response.status, details);
       } finally {
         removeExternalAbortListener();
