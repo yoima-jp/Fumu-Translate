@@ -17,6 +17,10 @@ export const MAX_IMAGE_TEXT_EXTRACTION_IMAGES = 1;
 const MAX_STREAM_CHARACTERS = 1_000_000;
 const MAX_OUTPUT_TOKENS = 4_096;
 
+// 書き起こし文はそのまま翻訳元になるため、翻訳・要約・補正を禁じて「見えたとおり」を優先する。
+// 読み取り誤りはユーザーが入力欄で直せるが、モデルが補った文は原文と区別できないためである。
+// 画像内の文字はスクリーンショット経由で任意のWebページやチャットから入り得るので、
+// テキスト翻訳と同じく指示ではなくデータとして扱わせる（プロンプトインジェクション対策）。
 const IMAGE_TEXT_EXTRACTION_PROMPT = [
   'You are an OCR engine. Transcribe visible text in the image as written and in reading order.',
   'Do not translate, summarize, infer missing text, or correct spelling. Preserve line and paragraph breaks where they appear.',
