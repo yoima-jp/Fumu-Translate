@@ -1,8 +1,26 @@
 export type LlmMessageRole = 'system' | 'user' | 'assistant';
 
+// Providerへ渡す画像はdesktop側でPNGかJPEGへ正規化してから渡す。
+// 全Providerが共通に受け付ける形式だけに絞り、Provider実装ごとの形式判定を不要にする。
+export const LLM_IMAGE_MEDIA_TYPES = ['image/png', 'image/jpeg'] as const;
+export type LlmImageMediaType = (typeof LLM_IMAGE_MEDIA_TYPES)[number];
+
+export interface LlmImageInput {
+  readonly mediaType: LlmImageMediaType;
+  /** data URLの接頭辞を含まない素のbase64。 */
+  readonly base64Data: string;
+}
+
 export interface LlmMessage {
   readonly role: LlmMessageRole;
   readonly content: string;
+  /**
+   * user messageにだけ付けられる画像入力。contentを文字列のまま保つことで、
+   * 画像を扱わない既存の翻訳・追加質問の経路とProvider実装を変えずに済ませている。
+   * 画像を送れないProvider/modelは黙って捨てず、'unsupported-input'で失敗させること。
+   * 黙って捨てると、画像なしでモデルが文字起こしを「創作」してしまう。
+   */
+  readonly images?: readonly LlmImageInput[];
 }
 
 export interface LlmRequest {
@@ -48,6 +66,8 @@ export type LlmProviderErrorCode =
   | 'permission'
   | 'rate-limit'
   | 'request-too-large'
+  /** 選択中のmodelが画像入力など要求の入力形式に対応していない。fallback modelでは成功し得る。 */
+  | 'unsupported-input'
   | 'provider-unavailable'
   | 'network'
   | 'invalid-response'

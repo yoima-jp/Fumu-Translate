@@ -13,6 +13,7 @@ import type {
   ProviderModel,
   SaveProviderRequest,
   SettingsSnapshot,
+  ScreenshotShortcutUpdateResult,
   ShortcutUpdateResult,
   UpdateUsedModelsRequest,
   WritingStyleInstruction,
@@ -37,6 +38,8 @@ export const SELECTION_METHOD_VALUES = [
   'clipboard-copy',
   'clipboard-current',
   'manual',
+  // スクリーンショット翻訳（ベータ）で、画面の範囲を画像として読み取り文字起こししたもの。
+  'screenshot',
   'unknown',
 ] as const;
 export type SelectionMethod = (typeof SELECTION_METHOD_VALUES)[number];
@@ -169,6 +172,41 @@ export interface DesktopStatus {
   readonly translationConfigured: boolean;
 }
 
+/**
+ * rendererからmainへ渡す画像。rendererはブラウザで復号できる形式（WebP/GIF/BMPなど）を
+ * PNGへ変換してから渡す。mainはサイズ検証・縮小・再エンコードを一か所で行う。
+ */
+export interface ImageInputPayload {
+  readonly mediaType: 'image/png' | 'image/jpeg';
+  readonly data: Uint8Array;
+}
+
+export type ImageTextExtractionErrorCode =
+  | TranslationErrorCode
+  /** 復号できない、または空の画像。 */
+  | 'invalid-image'
+  /** 入力バイト数の上限を超えた画像。 */
+  | 'image-too-large';
+
+export type ImageTextExtractionOutcome =
+  | { readonly status: 'completed'; readonly text: string }
+  | { readonly status: 'no-text' }
+  | { readonly status: 'cancelled' }
+  | {
+      readonly status: 'failed';
+      readonly code: ImageTextExtractionErrorCode;
+      readonly message: string;
+      readonly retryable: boolean;
+    };
+
+/** スクリーンショット範囲選択overlay内の座標（DIP、overlay windowの左上基準）。 */
+export interface ScreenCaptureSelection {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+
 export interface PopupResizeRequest {
   readonly width: number;
   readonly height: number;
@@ -207,6 +245,14 @@ export interface FumuDesktopApi {
   beginShortcutCapture(): Promise<void>;
   endShortcutCapture(): Promise<void>;
   updateShortcut(shortcut: string): Promise<ShortcutUpdateResult>;
+  /** nullでスクリーンショット翻訳（ベータ）を無効化する。 */
+  updateScreenshotShortcut(shortcut: string | null): Promise<ScreenshotShortcutUpdateResult>;
+  /** メインウィンドウに貼り付け・ドロップされた画像の文字を書き起こす。翻訳はしない。 */
+  extractImageText(image: ImageInputPayload): Promise<ImageTextExtractionOutcome>;
+  /** 実行中の画像読み取りを中断する。読み取り中でなければ何もしない。 */
+  cancelImageTextExtraction(): Promise<void>;
+  /** スクリーンショット範囲選択overlayから、選択範囲（nullは取消）を返す。 */
+  completeScreenCapture(selection: ScreenCaptureSelection | null): Promise<void>;
   updateGeneralSettings(update: GeneralSettingsUpdate): Promise<SettingsSnapshot>;
   fetchProviderModels(request: FetchProviderModelsRequest): Promise<readonly ProviderModel[]>;
   loginChatGpt(providerId: string): Promise<void>;

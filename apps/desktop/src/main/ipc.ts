@@ -109,10 +109,10 @@ export function registerIpcHandlers(
     join(__dirname, '../renderer/index.html'),
   );
 
-  const assertTrustedSender = (
+  const assertTrustedSender = <Kind extends RendererKind>(
     event: IpcMainInvokeEvent,
-    allowedKinds: readonly RendererKind[],
-  ): RendererKind => {
+    allowedKinds: readonly Kind[],
+  ): Kind => {
     const frame = event.senderFrame;
     return assertRendererAccess(
       frame?.url ?? '',
@@ -122,8 +122,7 @@ export function registerIpcHandlers(
     );
   };
 
-  const mainOnly = (event: IpcMainInvokeEvent): RendererKind =>
-    assertTrustedSender(event, ['main']);
+  const mainOnly = (event: IpcMainInvokeEvent): 'main' => assertTrustedSender(event, ['main']);
   const updates = new ReleaseUpdates({
     version: app.getVersion(),
     architecture: process.arch,
@@ -146,9 +145,8 @@ export function registerIpcHandlers(
     mainOnly(event);
     return updates.download();
   });
-  const popupOnly = (event: IpcMainInvokeEvent): RendererKind =>
-    assertTrustedSender(event, ['popup']);
-  const eitherWindow = (event: IpcMainInvokeEvent): RendererKind =>
+  const popupOnly = (event: IpcMainInvokeEvent): 'popup' => assertTrustedSender(event, ['popup']);
+  const eitherWindow = (event: IpcMainInvokeEvent): 'main' | 'popup' =>
     assertTrustedSender(event, ['main', 'popup']);
 
   ipcMain.handle(IPC_CHANNELS.appGetStatus, (event) => {

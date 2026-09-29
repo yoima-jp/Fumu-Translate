@@ -3,6 +3,8 @@ import type { ConversationContextTurn } from '@fumu/translation-core';
 import type {
   DesktopStatus,
   FumuDesktopApi,
+  ImageInputPayload,
+  ScreenCaptureSelection,
   PopupResizeRequest,
   PopupViewState,
 } from '../shared/contracts';
@@ -60,6 +62,13 @@ const api: FumuDesktopApi = {
   beginShortcutCapture: () => ipcRenderer.invoke(IPC_CHANNELS.settingsBeginShortcutCapture),
   endShortcutCapture: () => ipcRenderer.invoke(IPC_CHANNELS.settingsEndShortcutCapture),
   updateShortcut: (shortcut) => ipcRenderer.invoke(IPC_CHANNELS.settingsUpdateShortcut, shortcut),
+  updateScreenshotShortcut: (shortcut) =>
+    ipcRenderer.invoke(IPC_CHANNELS.settingsUpdateScreenshotShortcut, shortcut),
+  extractImageText: (image: ImageInputPayload) =>
+    ipcRenderer.invoke(IPC_CHANNELS.appExtractImageText, image),
+  cancelImageTextExtraction: () => ipcRenderer.invoke(IPC_CHANNELS.appCancelImageTextExtraction),
+  completeScreenCapture: (selection: ScreenCaptureSelection | null) =>
+    ipcRenderer.invoke(IPC_CHANNELS.screenCaptureComplete, selection),
   updateGeneralSettings: (update: GeneralSettingsUpdate) =>
     ipcRenderer.invoke(IPC_CHANNELS.settingsUpdateGeneral, update),
   fetchProviderModels: (request: FetchProviderModelsRequest) =>

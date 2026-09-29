@@ -147,6 +147,7 @@ export class SettingsService {
   get snapshot(): SettingsSnapshot {
     return {
       shortcut: this.#repository.shortcut,
+      screenshotShortcut: this.#repository.screenshotShortcut,
       historyEnabled: this.#repository.historyEnabled,
       compactTranslation: this.#repository.compactTranslation,
       developerMode: this.#repository.developerMode,
@@ -176,6 +177,11 @@ export class SettingsService {
 
   setShortcut(shortcut: string): SettingsSnapshot {
     this.#repository.setShortcut(shortcut);
+    return this.#publish();
+  }
+
+  setScreenshotShortcut(shortcut: string | null): SettingsSnapshot {
+    this.#repository.setScreenshotShortcut(shortcut);
     return this.#publish();
   }
 

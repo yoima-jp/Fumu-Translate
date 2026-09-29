@@ -558,6 +558,8 @@ export interface GeneralSettingsUpdate {
 
 export interface SettingsSnapshot {
   readonly shortcut: string;
+  /** スクリーンショット翻訳（ベータ）のグローバルショートカット。nullは無効。 */
+  readonly screenshotShortcut: string | null;
   readonly launchAtLogin: boolean;
   readonly enterToSend: boolean;
   readonly compactTranslation: boolean;
@@ -576,6 +578,13 @@ export interface SettingsSnapshot {
   readonly providers: readonly ProviderConnection[];
   /** 先頭がメイン、以降は接続障害時のfallback順。 */
   readonly usedModels: readonly UsedModelReference[];
+}
+
+export interface ScreenshotShortcutUpdateResult {
+  readonly state: 'registered' | 'conflict' | 'invalid' | 'disabled';
+  /** 実際に保存されたショートカット。登録に失敗した場合は変更前の値。 */
+  readonly shortcut: string | null;
+  readonly message: string | null;
 }
 
 export interface ShortcutUpdateResult {

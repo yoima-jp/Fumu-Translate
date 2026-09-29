@@ -92,6 +92,12 @@ export class SettingsRepository {
     return this.#getSetting('shortcut') ?? DEFAULT_TRANSLATE_SHORTCUT;
   }
 
+  /** nullはスクリーンショット翻訳（ベータ）が無効。既定で無効にし、グローバルなキーを勝手に奪わない。 */
+  get screenshotShortcut(): string | null {
+    const value = this.#getSetting('screenshotShortcut');
+    return value === null || value.length === 0 ? null : value;
+  }
+
   get historyEnabled(): boolean {
     return this.#getSetting('history_enabled') !== 'false';
   }
@@ -268,6 +274,10 @@ export class SettingsRepository {
 
   setShortcut(shortcut: string): void {
     this.#setSetting('shortcut', shortcut);
+  }
+
+  setScreenshotShortcut(shortcut: string | null): void {
+    this.#setSetting('screenshotShortcut', shortcut ?? '');
   }
 
   setGeneralSettings(
