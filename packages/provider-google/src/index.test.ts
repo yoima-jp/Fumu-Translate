@@ -50,4 +50,74 @@ describe('GoogleGeminiClient', () => {
     expect(init?.headers).toMatchObject({ 'x-goog-api-key': 'secret' });
     expect(events).toContainEqual({ type: 'text-delta', text: 'translated' });
   });
+
+  it('sends image parts before nonempty text and omits empty text parts', async () => {
+    const fetcher = vi.fn<FetchLike>(async () => eventStream([]));
+    const client = new GoogleGeminiClient({ model: 'gemini-2.5-flash', fetch: fetcher });
+    const session = await client.createSession({
+      messages: [
+        {
+          role: 'user',
+          content: 'Read this image',
+          images: [
+            { mediaType: 'image/png', base64Data: 'cG5n' },
+            { mediaType: 'image/jpeg', base64Data: 'anBlZw==' },
+          ],
+        },
+        {
+          role: 'user',
+          content: '',
+          images: [{ mediaType: 'image/jpeg', base64Data: 'ZW1wdHk=' }],
+        },
+      ],
+    });
+    await session.close();
+
+    const init = fetcher.mock.calls[0]?.[1];
+    const body = JSON.parse(String(init?.body)) as { contents: unknown[] };
+    expect(body.contents).toEqual([
+      {
+        role: 'user',
+        parts: [
+          { inlineData: { mimeType: 'image/png', data: 'cG5n' } },
+          { inlineData: { mimeType: 'image/jpeg', data: 'anBlZw==' } },
+          { text: 'Read this image' },
+        ],
+      },
+      {
+        role: 'user',
+        parts: [{ inlineData: { mimeType: 'image/jpeg', data: 'ZW1wdHk=' } }],
+      },
+    ]);
+  });
+
+  it('classifies image capability rejections only for image requests', async () => {
+    const fetcher = vi.fn<FetchLike>(
+      async () =>
+        new Response(
+          JSON.stringify({ error: { message: 'This model does not support image input' } }),
+          {
+            status: 400,
+            headers: { 'content-type': 'application/json' },
+          },
+        ),
+    );
+    const client = new GoogleGeminiClient({ model: 'gemini-2.5-flash', fetch: fetcher });
+    const imageRequest: LlmRequest = {
+      messages: [
+        { role: 'user', content: '', images: [{ mediaType: 'image/png', base64Data: 'cG5n' }] },
+      ],
+    };
+
+    await expect(client.createSession(imageRequest)).rejects.toMatchObject({
+      code: 'unsupported-input',
+      retryable: false,
+      status: 400,
+    });
+    await expect(client.createSession(request)).rejects.toMatchObject({
+      code: 'unknown',
+      retryable: false,
+      status: 400,
+    });
+  });
 });
