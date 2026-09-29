@@ -15,6 +15,7 @@ import {
   X,
 } from 'lucide-react';
 import {
+  DEFAULT_SCREENSHOT_SHORTCUT,
   DEFAULT_WRITING_STYLES,
   FIXED_ADJUSTMENT_STYLE_IDS,
   MAX_WRITING_STYLE_INSTRUCTION_LENGTH,
@@ -306,15 +307,22 @@ function acceleratorFromEvent(event: React.KeyboardEvent): string | null {
 function ShortcutSettings({ settings }: { settings: SettingsSnapshot }) {
   const { t } = useI18n();
   const [shortcut, setShortcut] = useState(settings.shortcut);
-  const [recording, setRecording] = useState(false);
+  const [screenshotShortcut, setScreenshotShortcut] = useState(settings.screenshotShortcut);
+  const [recordingTarget, setRecordingTarget] = useState<'translate' | 'screenshot' | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-  const recorderRef = useRef<HTMLButtonElement>(null);
+  const translateRecorderRef = useRef<HTMLButtonElement>(null);
+  const screenshotRecorderRef = useRef<HTMLButtonElement>(null);
   const captureActiveRef = useRef(false);
 
   useEffect(() => setShortcut(settings.shortcut), [settings.shortcut]);
+  useEffect(
+    () => setScreenshotShortcut(settings.screenshotShortcut),
+    [settings.screenshotShortcut],
+  );
   useEffect(() => {
-    if (recording) recorderRef.current?.focus();
-  }, [recording]);
+    if (recordingTarget === 'translate') translateRecorderRef.current?.focus();
+    if (recordingTarget === 'screenshot') screenshotRecorderRef.current?.focus();
+  }, [recordingTarget]);
   useEffect(
     () => () => {
       if (captureActiveRef.current) {
@@ -326,26 +334,62 @@ function ShortcutSettings({ settings }: { settings: SettingsSnapshot }) {
   );
 
   const stopRecording = (): void => {
-    setRecording(false);
+    setRecordingTarget(null);
     if (!captureActiveRef.current) return;
     captureActiveRef.current = false;
     void window.fumu.endShortcutCapture().catch(() => setMessage(t('common.settingsSaveError')));
   };
 
-  const startRecording = (): void => {
+  const startRecording = (target: 'translate' | 'screenshot'): void => {
     if (captureActiveRef.current) return;
     captureActiveRef.current = true;
     setMessage(t('settings.shortcutPrompt'));
     void window.fumu
       .beginShortcutCapture()
       .then(() => {
-        if (captureActiveRef.current) setRecording(true);
+        if (captureActiveRef.current) setRecordingTarget(target);
       })
       .catch(() => {
         captureActiveRef.current = false;
-        setRecording(false);
+        setRecordingTarget(null);
         setMessage(t('common.settingsSaveError'));
       });
+  };
+
+  const updateScreenshotShortcut = (value: string | null): void => {
+    void window.fumu
+      .updateScreenshotShortcut(value)
+      .then((result) => {
+        setScreenshotShortcut(result.shortcut);
+        if (result.state === 'conflict') setMessage(t('settings.shortcutConflict'));
+        else if (result.state === 'invalid') setMessage(t('settings.shortcutInvalid'));
+        else
+          setMessage(
+            result.state === 'disabled' ? t('settings.shortcutDisabled') : t('settings.saved'),
+          );
+      })
+      .catch(() => setMessage(t('common.settingsSaveError')));
+  };
+
+  const recordShortcut = (
+    event: React.KeyboardEvent<HTMLButtonElement>,
+    target: 'translate' | 'screenshot',
+  ): void => {
+    if (recordingTarget !== target) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const value = acceleratorFromEvent(event);
+    if (value === null) {
+      setMessage(t('settings.shortcutInvalid'));
+      return;
+    }
+    stopRecording();
+    if (target === 'translate') {
+      setShortcut(value);
+      save(value);
+    } else {
+      updateScreenshotShortcut(value);
+    }
   };
 
   const save = (value: string): void => {
@@ -376,27 +420,17 @@ function ShortcutSettings({ settings }: { settings: SettingsSnapshot }) {
       <div className="shortcut-editor">
         <KeyRound size={18} aria-hidden="true" />
         <button
-          ref={recorderRef}
-          className={recording ? 'shortcut-recorder recording' : 'shortcut-recorder'}
+          ref={translateRecorderRef}
+          className={
+            recordingTarget === 'translate' ? 'shortcut-recorder recording' : 'shortcut-recorder'
+          }
           type="button"
           aria-label={t('settings.shortcutRecord')}
-          onClick={startRecording}
+          onClick={() => startRecording('translate')}
           onBlur={stopRecording}
-          onKeyDown={(event) => {
-            if (!recording) return;
-            event.preventDefault();
-            event.stopPropagation();
-            const value = acceleratorFromEvent(event);
-            if (value === null) {
-              setMessage(t('settings.shortcutInvalid'));
-              return;
-            }
-            stopRecording();
-            setShortcut(value);
-            save(value);
-          }}
+          onKeyDown={(event) => recordShortcut(event, 'translate')}
         >
-          {recording
+          {recordingTarget === 'translate'
             ? t('settings.shortcutPrompt')
             : displayAccelerator(shortcut, t('common.notConfigured'))}
         </button>
@@ -417,6 +451,46 @@ function ShortcutSettings({ settings }: { settings: SettingsSnapshot }) {
         />
         <span className="quick-settings-switch" aria-hidden="true" />
       </label>
+      <label className="settings-line settings-toggle screenshot-shortcut-toggle">
+        <span>
+          <strong>
+            {t('settings.screenshotTranslation')}
+            <span className="beta-badge">{t('common.beta')}</span>
+          </strong>
+          <small>{t('settings.screenshotTranslationDetail')}</small>
+        </span>
+        <input
+          type="checkbox"
+          checked={screenshotShortcut !== null}
+          aria-label={t('settings.screenshotTranslation')}
+          onChange={(event) =>
+            updateScreenshotShortcut(
+              event.currentTarget.checked ? DEFAULT_SCREENSHOT_SHORTCUT : null,
+            )
+          }
+        />
+        <span className="quick-settings-switch" aria-hidden="true" />
+      </label>
+      {screenshotShortcut !== null && (
+        <div className="shortcut-editor screenshot-shortcut-editor">
+          <KeyRound size={18} aria-hidden="true" />
+          <button
+            ref={screenshotRecorderRef}
+            className={
+              recordingTarget === 'screenshot' ? 'shortcut-recorder recording' : 'shortcut-recorder'
+            }
+            type="button"
+            aria-label={t('settings.screenshotShortcutRecord')}
+            onClick={() => startRecording('screenshot')}
+            onBlur={stopRecording}
+            onKeyDown={(event) => recordShortcut(event, 'screenshot')}
+          >
+            {recordingTarget === 'screenshot'
+              ? t('settings.shortcutPrompt')
+              : displayAccelerator(screenshotShortcut, t('common.notConfigured'))}
+          </button>
+        </div>
+      )}
       {message && (
         <p className="field-message" role="status">
           {message}
