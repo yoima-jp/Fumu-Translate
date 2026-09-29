@@ -1,6 +1,8 @@
 // Rendererは設定スナップショット到着前にもショートカットを表示する。
 // 永続化層と初期表示が同じ既定値を参照し、起動直後だけ表示が食い違わないようにする。
 export const DEFAULT_TRANSLATE_SHORTCUT = 'CommandOrControl+Shift+J';
+// Rendererと永続化層でスクリーンショット翻訳（ベータ）の初期キーを揃える。
+export const DEFAULT_SCREENSHOT_SHORTCUT = 'CommandOrControl+Shift+K';
 
 export const PROVIDER_KIND_VALUES = [
   'chatgpt',

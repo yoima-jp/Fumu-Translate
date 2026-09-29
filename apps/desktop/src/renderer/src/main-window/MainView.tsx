@@ -2,13 +2,14 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
   ArrowUp,
   ChevronRight,
-  Image as ImageIcon,
   MessagesSquare,
   PenLine,
   Settings as SettingsIcon,
   SlidersHorizontal,
+  X,
 } from 'lucide-react';
-import type { DesktopStatus, PopupViewState } from '../../../shared/contracts';
+import { MAX_TRANSLATION_SOURCE_CODE_POINTS } from '@fumu/translation-core';
+import type { DesktopStatus, ImageInputPayload, PopupViewState } from '../../../shared/contracts';
 import type { HistoryDetail, HistoryListItem } from '../../../shared/history-contracts';
 import type { GeneralSettingsUpdate } from '../../../shared/settings-contracts';
 import {
@@ -30,7 +31,7 @@ import {
   appliedTranslationInstructions,
   type AppliedTranslationInstruction,
 } from './applied-translation-instructions';
-import { InlineContextEditor } from './InlineContextEditor';
+import { InlineContextEditor, type InlineContextEditorHandle } from './InlineContextEditor';
 import { composeWritingStyleInstruction } from './writing-style-selection';
 import { useI18n } from '../i18n';
 import { localizedWritingStyles } from '../i18n/writing-styles';
@@ -67,6 +68,38 @@ const INITIAL_STATUS: DesktopStatus = {
   translationConfigured: false,
 };
 const INITIAL_POPUP: PopupViewState = { phase: 'idle', requestId: null };
+const MAX_IMAGE_INPUT_BYTES = 20 * 1024 * 1024;
+
+class ImageInputTooLargeError extends Error {}
+
+async function imagePayloadFromFile(file: File): Promise<ImageInputPayload> {
+  if (file.size > MAX_IMAGE_INPUT_BYTES) throw new ImageInputTooLargeError();
+  const mediaType = file.type.toLowerCase();
+  if (mediaType === 'image/png' || mediaType === 'image/jpeg') {
+    return { mediaType, data: new Uint8Array(await file.arrayBuffer()) };
+  }
+
+  // main側の縮小処理を一元化するため、rendererでは形式だけをPNGへ揃える。
+  const bitmap = await createImageBitmap(file);
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const context = canvas.getContext('2d');
+    if (context === null) throw new Error('Canvas is unavailable');
+    context.drawImage(bitmap, 0, 0);
+    const blob = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob((value) => {
+        if (value === null) reject(new Error('PNG conversion failed'));
+        else resolve(value);
+      }, 'image/png');
+    });
+    if (blob.size > MAX_IMAGE_INPUT_BYTES) throw new ImageInputTooLargeError();
+    return { mediaType: 'image/png', data: new Uint8Array(await blob.arrayBuffer()) };
+  } finally {
+    bitmap.close();
+  }
+}
 
 function useDesktopStatus(): DesktopStatus {
   const [status, setStatus] = useState(INITIAL_STATUS);
@@ -362,6 +395,11 @@ function Composer({
   const [drafting, setDrafting] = useState(initialConversation === null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [imageReadingPreview, setImageReadingPreview] = useState<string | null>(null);
+  const [imageUnsupportedModel, setImageUnsupportedModel] = useState(false);
+  const [imageTranslationSource, setImageTranslationSource] = useState(false);
+  const [imageSourceEditing, setImageSourceEditing] = useState(false);
+  const [imageSourceDraft, setImageSourceDraft] = useState('');
   const [quickSettingsOpen, setQuickSettingsOpen] = useState(false);
   const [quickSettingsRendered, setQuickSettingsRendered] = useState(false);
   const quickSettingsRef = useRef<HTMLDivElement>(null);
@@ -369,6 +407,10 @@ function Composer({
   const quickSettingsCloseTimerRef = useRef<number | null>(null);
   const styleAdjustCloseTimerRef = useRef<number | null>(null);
   const submittingRef = useRef(false);
+  const editorRef = useRef<InlineContextEditorHandle>(null);
+  const imageRequestIdRef = useRef(0);
+  const imagePreviewUrlRef = useRef<string | null>(null);
+  const imageExtractionActiveRef = useRef(false);
   const quickSettingsId = useId();
   const conversationReady =
     mode !== 'conversation' ||
@@ -403,12 +445,12 @@ function Composer({
       setDrafting(false);
     }
   }, [dismissedTranslationRequestId, state.phase, state.requestId]);
-  const submit = (conversationReply?: {
+  const submit = (submission?: {
     readonly text: string;
-    readonly direction: ConversationDirection;
+    readonly direction?: ConversationDirection;
   }): void => {
-    const value = (conversationReply?.text ?? text).trim();
-    const submittedDirection = conversationReply?.direction ?? conversationDirection;
+    const value = (submission?.text ?? text).trim();
+    const submittedDirection = submission?.direction ?? conversationDirection;
     const submittedConversationReady =
       mode !== 'conversation' ||
       submittedDirection === 'outgoing' ||
@@ -499,6 +541,123 @@ function Composer({
         setSubmitError(t('main.startError'));
       });
   };
+  const submitRef = useRef(submit);
+  submitRef.current = submit;
+  const cancelImageReading = (): void => {
+    imageRequestIdRef.current += 1;
+    imageExtractionActiveRef.current = false;
+    void window.fumu.cancelImageTextExtraction().catch(() => undefined);
+    if (imagePreviewUrlRef.current !== null) {
+      URL.revokeObjectURL(imagePreviewUrlRef.current);
+      imagePreviewUrlRef.current = null;
+    }
+    setImageReadingPreview(null);
+  };
+  const readImage = (file: File): void => {
+    setSubmitError(null);
+    setImageUnsupportedModel(false);
+    const cancelPrevious = imageExtractionActiveRef.current;
+    imageExtractionActiveRef.current = false;
+    const requestId = ++imageRequestIdRef.current;
+    if (imagePreviewUrlRef.current !== null) {
+      URL.revokeObjectURL(imagePreviewUrlRef.current);
+      imagePreviewUrlRef.current = null;
+    }
+    setImageReadingPreview(null);
+    if (file.size > MAX_IMAGE_INPUT_BYTES) {
+      if (cancelPrevious) {
+        void window.fumu.cancelImageTextExtraction().catch(() => undefined);
+      }
+      setSubmitError(t('main.imageTooLarge'));
+      return;
+    }
+
+    const previewUrl = URL.createObjectURL(file);
+    imagePreviewUrlRef.current = previewUrl;
+    setImageReadingPreview(previewUrl);
+
+    void (async () => {
+      let extracting = false;
+      try {
+        if (cancelPrevious) {
+          await window.fumu.cancelImageTextExtraction().catch(() => undefined);
+        }
+        const image = await imagePayloadFromFile(file);
+        if (requestId !== imageRequestIdRef.current) return;
+        extracting = true;
+        imageExtractionActiveRef.current = true;
+        const outcome = await window.fumu.extractImageText(image);
+        if (requestId !== imageRequestIdRef.current) return;
+        switch (outcome.status) {
+          case 'completed': {
+            if (outcome.text.trim().length === 0) {
+              setSubmitError(t('main.imageNoText'));
+              break;
+            }
+            const nextValue = editorRef.current?.appendText(outcome.text);
+            if (nextValue === null || nextValue === undefined) {
+              setSubmitError(t('main.imageTextLimit'));
+            } else {
+              setImageTranslationSource(true);
+              setImageSourceEditing(false);
+              // 文脈・文体・翻訳中状態を既存の翻訳開始処理と共有する。
+              submitRef.current({ text: nextValue.text });
+            }
+            break;
+          }
+          case 'no-text':
+            setSubmitError(t('main.imageNoText'));
+            break;
+          case 'cancelled':
+            break;
+          case 'failed':
+            if (outcome.code === 'unsupported-input') {
+              setImageUnsupportedModel(true);
+              setSubmitError(t('main.imageModelUnsupported'));
+            } else if (outcome.code === 'image-too-large') {
+              setSubmitError(t('main.imageTooLarge'));
+            } else if (outcome.code === 'invalid-image') {
+              setSubmitError(t('main.imageInvalid'));
+            } else {
+              setSubmitError(outcome.message);
+            }
+            break;
+        }
+      } catch (error) {
+        if (requestId !== imageRequestIdRef.current) return;
+        if (error instanceof ImageInputTooLargeError) {
+          setSubmitError(t('main.imageTooLarge'));
+        } else if (!extracting) {
+          setSubmitError(t('main.imageUnreadable'));
+        } else {
+          setSubmitError(t('common.genericError'));
+        }
+      } finally {
+        if (requestId === imageRequestIdRef.current) {
+          imageExtractionActiveRef.current = false;
+          if (imagePreviewUrlRef.current !== null) {
+            URL.revokeObjectURL(imagePreviewUrlRef.current);
+            imagePreviewUrlRef.current = null;
+          }
+          setImageReadingPreview(null);
+        }
+      }
+    })();
+  };
+  useEffect(
+    () => () => {
+      imageRequestIdRef.current += 1;
+      if (imageExtractionActiveRef.current) {
+        imageExtractionActiveRef.current = false;
+        void window.fumu.cancelImageTextExtraction().catch(() => undefined);
+      }
+      if (imagePreviewUrlRef.current !== null) {
+        URL.revokeObjectURL(imagePreviewUrlRef.current);
+        imagePreviewUrlRef.current = null;
+      }
+    },
+    [],
+  );
   const selectWritingStyle = (style: WritingStyle): void => {
     setSelectedWritingStyleIds((current) =>
       current.includes(style.id) ? current.filter((id) => id !== style.id) : [...current, style.id],
@@ -647,29 +806,97 @@ function Composer({
   return (
     <div className="translate-workspace composer-workspace">
       {showingResult ? (
-        <button
-          className="nani-new-bar"
-          type="button"
-          onClick={() => {
-            // The rich editor owns its DOM while mounted. Reset the parent submission state at
-            // the same boundary so an empty remounted editor can never submit hidden prior input.
-            setText('');
-            setInlineContexts([]);
-            setResultInstructions([]);
-            setConversationTurns([]);
-            setConversationSessionId(crypto.randomUUID());
-            setActiveConversationSubmission(null);
-            setResumedConversationTurn(null);
-            submittingRef.current = false;
-            setSubmitting(false);
-            setSubmitError(null);
-            setDrafting(true);
-          }}
-        >
-          <SlidersHorizontal size={19} />
-          <span>{t('main.anotherText')}</span>
-          <PenLine size={19} />
-        </button>
+        <>
+          <div className="nani-result-actions">
+            {showingStandardResult && imageTranslationSource && !imageSourceEditing && (
+              <button
+                className="nani-new-bar"
+                type="button"
+                onClick={() => {
+                  setImageSourceDraft(text);
+                  setImageSourceEditing(true);
+                }}
+              >
+                <PenLine size={19} />
+                <span>{t('main.editSource')}</span>
+              </button>
+            )}
+            <button
+              className="nani-new-bar"
+              type="button"
+              onClick={() => {
+                // The rich editor owns its DOM while mounted. Reset the parent submission state at
+                // the same boundary so an empty remounted editor can never submit hidden prior input.
+                setText('');
+                setInlineContexts([]);
+                setResultInstructions([]);
+                setConversationTurns([]);
+                setConversationSessionId(crypto.randomUUID());
+                setActiveConversationSubmission(null);
+                setResumedConversationTurn(null);
+                setImageTranslationSource(false);
+                setImageSourceEditing(false);
+                setImageSourceDraft('');
+                submittingRef.current = false;
+                setSubmitting(false);
+                setSubmitError(null);
+                setDrafting(true);
+              }}
+            >
+              <SlidersHorizontal size={19} />
+              <span>{t('main.anotherText')}</span>
+              <PenLine size={19} />
+            </button>
+          </div>
+          {showingStandardResult && imageTranslationSource && imageSourceEditing && (
+            <form
+              className="conversation-reply-composer image-source-editor"
+              onSubmit={(event) => {
+                event.preventDefault();
+                setText(imageSourceDraft);
+                setImageSourceEditing(false);
+                submitRef.current({ text: imageSourceDraft });
+              }}
+            >
+              <textarea
+                aria-label={t('main.textLabel')}
+                autoFocus
+                value={imageSourceDraft}
+                disabled={submitting}
+                onChange={(event) =>
+                  setImageSourceDraft(
+                    Array.from(event.currentTarget.value)
+                      .slice(0, MAX_TRANSLATION_SOURCE_CODE_POINTS)
+                      .join(''),
+                  )
+                }
+              />
+              <div className="image-source-editor-actions">
+                <button
+                  className="text-button"
+                  type="button"
+                  disabled={submitting}
+                  onClick={() => setImageSourceEditing(false)}
+                >
+                  {t('common.cancel')}
+                </button>
+                <button
+                  className="translate-button"
+                  type="submit"
+                  disabled={
+                    submitting ||
+                    !imageSourceDraft.trim() ||
+                    !status.translationConfigured ||
+                    !conversationReady
+                  }
+                  aria-busy={submitting}
+                >
+                  {t('main.translate')} <ArrowUp size={17} />
+                </button>
+              </div>
+            </form>
+          )}
+        </>
       ) : (
         <section
           className={
@@ -823,12 +1050,23 @@ function Composer({
                 )}
               </div>
             )}
+            {imageReadingPreview !== null && (
+              <div className="image-reading-chip" role="status">
+                <img src={imageReadingPreview} alt="" />
+                <span>{t('main.imageReading')}</span>
+                <button type="button" aria-label={t('common.cancel')} onClick={cancelImageReading}>
+                  <X size={15} aria-hidden="true" />
+                </button>
+              </div>
+            )}
             <InlineContextEditor
+              ref={editorRef}
               label={mode === 'conversation' ? t('main.messageLabel') : t('main.textLabel')}
               placeholder={
                 mode === 'conversation' ? t('main.messagePlaceholder') : t('main.textPlaceholder')
               }
               submitOnEnter={settings?.enterToSend === true}
+              onImageFile={readImage}
               onChange={(value) => {
                 setText(value.text);
                 setInlineContexts(value.inlineContexts);
@@ -890,8 +1128,16 @@ function Composer({
         </section>
       )}
       {submitError && (
-        <p className="inline-error" role="alert">
-          {submitError}
+        <p
+          className={imageUnsupportedModel ? 'inline-error image-input-error' : 'inline-error'}
+          role="alert"
+        >
+          <span>{submitError}</span>
+          {imageUnsupportedModel && (
+            <button className="text-button" type="button" onClick={openSettings}>
+              {t('common.settings')}
+            </button>
+          )}
         </p>
       )}
       {showingConversationResult && activeConversationTurn !== null ? (
@@ -913,19 +1159,6 @@ function Composer({
       ) : null}
       {!showingResult && (
         <div className="translation-mode-cards">
-          <button
-            className="mode-card image-mode"
-            type="button"
-            disabled
-            aria-describedby="image-coming-soon"
-          >
-            <ImageIcon size={23} />
-            <span>
-              <strong>{t('main.imageTitle')}</strong>
-              <small>{t('main.imageDetail')}</small>
-            </span>
-            <em id="image-coming-soon">{t('main.comingSoon')}</em>
-          </button>
           <button
             className={mode === 'conversation' ? 'mode-card selected' : 'mode-card'}
             type="button"

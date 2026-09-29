@@ -1,4 +1,12 @@
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import {
+  forwardRef,
+  useEffect,
+  useId,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   MAX_INLINE_TRANSLATION_CONTEXT_CODE_POINTS,
   MAX_TRANSLATION_SOURCE_CODE_POINTS,
@@ -17,6 +25,10 @@ const CARET_SENTINEL = '\u200b';
 export interface InlineContextEditorValue {
   readonly text: string;
   readonly inlineContexts: readonly string[];
+}
+
+export interface InlineContextEditorHandle {
+  appendText(text: string): InlineContextEditorValue | null;
 }
 
 interface MentionQuery {
@@ -186,19 +198,20 @@ function enforceSourceLimit(editor: HTMLDivElement): void {
   placeCaretAfter(editor);
 }
 
-export function InlineContextEditor({
-  label,
-  placeholder,
-  submitOnEnter,
-  onChange,
-  onSubmit,
-}: {
-  readonly label: string;
-  readonly placeholder: string;
-  readonly submitOnEnter: boolean;
-  readonly onChange: (value: InlineContextEditorValue) => void;
-  readonly onSubmit: () => void;
-}): React.JSX.Element {
+export const InlineContextEditor = forwardRef<
+  InlineContextEditorHandle,
+  {
+    readonly label: string;
+    readonly placeholder: string;
+    readonly submitOnEnter: boolean;
+    readonly onChange: (value: InlineContextEditorValue) => void;
+    readonly onSubmit: () => void;
+    readonly onImageFile: (file: File) => void;
+  }
+>(function InlineContextEditor(
+  { label, placeholder, submitOnEnter, onChange, onSubmit, onImageFile },
+  forwardedRef,
+): React.JSX.Element {
   const { locale, t } = useI18n();
   const localizedDefaultContexts = defaultInlineContexts(locale);
   const editorRef = useRef<HTMLDivElement>(null);
@@ -208,6 +221,8 @@ export function InlineContextEditor({
   const [value, setValue] = useState<InlineContextEditorValue>({ text: '', inlineContexts: [] });
   const [mention, setMention] = useState<MentionQuery | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
+  const [imageDragActive, setImageDragActive] = useState(false);
+  const imageDragDepthRef = useRef(0);
   const listboxId = useId();
   const optionIdPrefix = useId();
   const candidates = useMemo(
@@ -364,8 +379,64 @@ export function InlineContextEditor({
       ? `${optionIdPrefix}-${Math.min(activeIndex, candidates.length - 1)}`
       : undefined;
 
+  useImperativeHandle(
+    forwardedRef,
+    () => ({
+      appendText(text) {
+        const editor = editorRef.current;
+        if (editor === null) return null;
+        const current = editorValue(editor);
+        const separator = current.text.length > 0 ? '\n\n' : '';
+        const available = Math.max(
+          0,
+          MAX_TRANSLATION_SOURCE_CODE_POINTS -
+            Array.from(current.text).length -
+            Array.from(separator).length,
+        );
+        const transcription = Array.from(text);
+        if (transcription.length > available) return null;
+        const appended = transcription.join('');
+        if (appended.length === 0) return null;
+        const range = document.createRange();
+        range.selectNodeContents(editor);
+        range.collapse(false);
+        const node = document.createTextNode(`${separator}${appended}`);
+        range.insertNode(node);
+        placeCaretAfter(node);
+        closeMention();
+        const nextValue = editorValue(editor);
+        setValue(nextValue);
+        onChange(nextValue);
+        updatePlaceholderVisibility(editor);
+        return nextValue;
+      },
+    }),
+    [onChange],
+  );
+
+  const imageFilesFromTransfer = (transfer: DataTransfer): File[] => {
+    const itemFiles = Array.from(transfer.items)
+      .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
+      .map((item) => item.getAsFile())
+      .filter((file): file is File => file !== null);
+    const files = itemFiles.length > 0 ? itemFiles : Array.from(transfer.files);
+    return files.filter((file) => file.type.startsWith('image/'));
+  };
+
+  const hasImageTransfer = (transfer: DataTransfer): boolean =>
+    Array.from(transfer.items).some(
+      (item) => item.kind === 'file' && item.type.startsWith('image/'),
+    ) || Array.from(transfer.files).some((file) => file.type.startsWith('image/'));
+
   return (
-    <div className="inline-context-editor-shell" ref={shellRef}>
+    <div
+      className={
+        imageDragActive
+          ? 'inline-context-editor-shell image-drag-active'
+          : 'inline-context-editor-shell'
+      }
+      ref={shellRef}
+    >
       <div
         ref={editorRef}
         className={
@@ -383,6 +454,30 @@ export function InlineContextEditor({
         aria-activedescendant={activeOptionId}
         data-placeholder={placeholder}
         spellCheck
+        onDragEnter={(event) => {
+          if (!hasImageTransfer(event.dataTransfer)) return;
+          imageDragDepthRef.current += 1;
+          setImageDragActive(true);
+        }}
+        onDragOver={(event) => {
+          if (!hasImageTransfer(event.dataTransfer)) return;
+          event.preventDefault();
+          event.dataTransfer.dropEffect = 'copy';
+          setImageDragActive(true);
+        }}
+        onDragLeave={() => {
+          if (!imageDragActive) return;
+          imageDragDepthRef.current = Math.max(0, imageDragDepthRef.current - 1);
+          if (imageDragDepthRef.current === 0) setImageDragActive(false);
+        }}
+        onDrop={(event) => {
+          imageDragDepthRef.current = 0;
+          setImageDragActive(false);
+          const image = imageFilesFromTransfer(event.dataTransfer)[0];
+          if (image === undefined) return;
+          event.preventDefault();
+          onImageFile(image);
+        }}
         onPointerDown={() => {
           if (mention !== null) closeMention();
         }}
@@ -425,6 +520,14 @@ export function InlineContextEditor({
           syncEditor();
         }}
         onPaste={(event) => {
+          const pastedText = event.clipboardData.getData('text/plain');
+          const clipboardImages = imageFilesFromTransfer(event.clipboardData);
+          // Wordなどのテキストと画像が同居する貼り付けは従来どおり文字を優先する。
+          if (pastedText.length === 0 && clipboardImages.length > 0) {
+            event.preventDefault();
+            onImageFile(clipboardImages[0]!);
+            return;
+          }
           event.preventDefault();
           const editor = editorRef.current;
           if (editor === null) return;
@@ -433,15 +536,14 @@ export function InlineContextEditor({
             0,
             MAX_TRANSLATION_SOURCE_CODE_POINTS - Array.from(value.text).length + selectedCodePoints,
           );
-          const pastedText = Array.from(event.clipboardData.getData('text/plain'))
-            .slice(0, available)
-            .join('');
+          const limitedPastedText = Array.from(pastedText).slice(0, available).join('');
           const selection = window.getSelection();
-          if (selection === null || selection.rangeCount === 0 || pastedText.length === 0) return;
+          if (selection === null || selection.rangeCount === 0 || limitedPastedText.length === 0)
+            return;
           const range = selection.getRangeAt(0);
           if (!rangeIsInside(range, editor)) return;
           range.deleteContents();
-          const pastedNode = document.createTextNode(pastedText);
+          const pastedNode = document.createTextNode(limitedPastedText);
           range.insertNode(pastedNode);
           placeCaretAfter(pastedNode);
           syncEditor();
@@ -527,4 +629,4 @@ export function InlineContextEditor({
       )}
     </div>
   );
-}
+});

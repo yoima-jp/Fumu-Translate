@@ -812,6 +812,37 @@ textarea {
   box-shadow: 0 3px 10px rgb(41 76 31 / 6%);
 }
 
+.nani-result-actions {
+  display: grid;
+  gap: 8px;
+}
+
+.image-source-editor {
+  padding: 16px 18px;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.image-source-editor textarea {
+  min-height: 140px;
+  padding: 10px 12px;
+  background: var(--nani-soft);
+  border: 1px solid var(--nani-line);
+  border-radius: 12px;
+  resize: vertical;
+}
+
+.image-source-editor textarea:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.image-source-editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .nani-composer-shell > header {
   display: flex;
   height: 48px;
@@ -886,6 +917,53 @@ textarea {
   position: relative;
   width: 100%;
   height: 150px;
+}
+
+.inline-context-editor-shell.image-drag-active {
+  background: color-mix(in srgb, var(--fumu-brand-action) 4%, transparent);
+  border-radius: 8px;
+  outline: 1px dashed color-mix(in srgb, var(--fumu-brand-action) 48%, transparent);
+  outline-offset: 4px;
+}
+
+.image-reading-chip {
+  display: inline-flex;
+  min-height: 34px;
+  margin: 0 0 8px;
+  padding: 3px 5px 3px 4px;
+  align-items: center;
+  gap: 8px;
+  color: var(--nani-muted);
+  font-size: 11px;
+  background: var(--nani-soft);
+  border: 1px solid var(--nani-line);
+  border-radius: 10px;
+}
+
+.image-reading-chip > img {
+  width: 27px;
+  height: 27px;
+  object-fit: cover;
+  background: var(--nani-panel);
+  border-radius: 7px;
+}
+
+.image-reading-chip > button {
+  display: grid;
+  width: 25px;
+  height: 25px;
+  padding: 0;
+  place-items: center;
+  color: var(--nani-muted);
+  background: transparent;
+  border: 0;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.image-reading-chip > button:hover {
+  color: var(--nani-ink);
+  background: var(--nani-panel);
 }
 
 .inline-context-editor {
@@ -1799,7 +1877,7 @@ textarea {
 .translation-mode-cards {
   display: grid;
   margin-top: 38px;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr);
   gap: 22px;
 }
 
@@ -2388,6 +2466,20 @@ textarea {
   opacity: 0.55;
 }
 
+.settings-line .beta-badge {
+  display: inline-flex;
+  margin-left: 7px;
+  padding: 2px 6px;
+  align-items: center;
+  color: var(--fumu-accent);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1.2;
+  background: color-mix(in srgb, var(--fumu-accent) 10%, var(--nani-panel));
+  border-radius: 999px;
+  vertical-align: 1px;
+}
+
 .compact-translation-setting {
   margin-top: 10px;
 }
@@ -2793,6 +2885,20 @@ button.style-row {
 .settings-modal .field-message {
   margin: 2px 0 8px 35px;
   color: var(--nani-muted);
+}
+
+.inline-error.image-input-error {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 3px 8px;
+}
+
+.image-input-error .text-button {
+  min-height: 26px;
+  padding: 0 5px;
+  color: #9d403a;
+  text-decoration: underline;
 }
 
 .settings-modal .text-button {
