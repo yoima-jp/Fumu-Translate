@@ -193,7 +193,7 @@ export interface HistoryPort {
     readonly answer: string;
     readonly createdAt: number;
   }): void;
-  list(query: string, limit: number): readonly HistoryListItem[];
+  list(query: string, limit: number, offset?: number): readonly HistoryListItem[];
   get(historyId: string): HistoryDetail | null;
   delete(historyId: string): void;
   clear(): void;
@@ -1038,7 +1038,7 @@ export class AppController {
     // 常駐中でも履歴を開くタイミングで期限を再評価する。起動時だけの整理では、
     // 長期間常駐したアプリに期限切れデータが残り続けるためである。
     this.#applyHistoryRetention(this.#settings.snapshot);
-    return this.#history.list(query.query, query.limit);
+    return this.#history.list(query.query, query.limit, query.offset);
   }
 
   getHistoryDetail(historyId: string): HistoryDetail | null {

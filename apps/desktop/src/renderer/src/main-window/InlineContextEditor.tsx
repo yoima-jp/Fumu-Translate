@@ -208,12 +208,23 @@ export const InlineContextEditor = forwardRef<
     readonly submitOnEnter: boolean;
     readonly initialValue?: InlineContextEditorValue;
     readonly onEscape?: () => void;
+    readonly onFocus?: () => void;
     readonly onChange: (value: InlineContextEditorValue) => void;
     readonly onSubmit: () => void;
     readonly onImageFile: (file: File) => void;
   }
 >(function InlineContextEditor(
-  { label, placeholder, submitOnEnter, initialValue, onEscape, onChange, onSubmit, onImageFile },
+  {
+    label,
+    placeholder,
+    submitOnEnter,
+    initialValue,
+    onEscape,
+    onFocus,
+    onChange,
+    onSubmit,
+    onImageFile,
+  },
   forwardedRef,
 ): React.JSX.Element {
   const { locale, t } = useI18n();
@@ -488,6 +499,7 @@ export const InlineContextEditor = forwardRef<
         aria-activedescendant={activeOptionId}
         data-placeholder={placeholder}
         spellCheck
+        onFocus={onFocus}
         onDragEnter={(event) => {
           if (!hasImageTransfer(event.dataTransfer)) return;
           imageDragDepthRef.current += 1;

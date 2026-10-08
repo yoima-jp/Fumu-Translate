@@ -214,9 +214,10 @@ export class HistoryRepository {
     });
   }
 
-  list(query: string, limit: number): readonly HistoryListItem[] {
+  list(query: string, limit: number, offset = 0): readonly HistoryListItem[] {
     const normalizedQuery = query.trim();
     const boundedLimit = Math.min(Math.max(Math.trunc(limit), 1), 200);
+    const boundedOffset = Math.max(Math.trunc(offset), 0);
     const filter = `%${escapeLike(normalizedQuery)}%`;
     const rows = this.#database.connection
       .prepare(
@@ -248,9 +249,15 @@ export class HistoryRepository {
            )
          )
          ORDER BY s.updated_at DESC, s.id DESC
-         LIMIT ?`,
+         LIMIT ? OFFSET ?`,
       )
-      .all(normalizedQuery, filter, filter, boundedLimit) as unknown as readonly SessionListRow[];
+      .all(
+        normalizedQuery,
+        filter,
+        filter,
+        boundedLimit,
+        boundedOffset,
+      ) as unknown as readonly SessionListRow[];
 
     return rows.map((row) => ({
       id: row.id,
