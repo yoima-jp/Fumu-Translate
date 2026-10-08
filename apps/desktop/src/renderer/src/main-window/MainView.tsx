@@ -192,41 +192,43 @@ function useMainTranslation(): PopupViewState {
   return state;
 }
 
-const TARGET_LANGUAGE_FLAGS: Record<NativeLanguage, string> = {
-  Japanese: '🇯🇵',
-  English: '🇺🇸',
-  Korean: '🇰🇷',
-  'Chinese (Simplified)': '🇨🇳',
-  'Chinese (Traditional)': '🇹🇼',
-  Spanish: '🇪🇸',
-  French: '🇫🇷',
-  German: '🇩🇪',
-  Arabic: '🇸🇦',
-  Bengali: '🇧🇩',
-  Czech: '🇨🇿',
-  Danish: '🇩🇰',
-  Dutch: '🇳🇱',
-  Finnish: '🇫🇮',
-  Greek: '🇬🇷',
-  Hebrew: '🇮🇱',
-  Hindi: '🇮🇳',
-  Hungarian: '🇭🇺',
-  Indonesian: '🇮🇩',
-  Italian: '🇮🇹',
-  Malay: '🇲🇾',
-  Norwegian: '🇳🇴',
-  Persian: '🇮🇷',
-  Polish: '🇵🇱',
-  'Portuguese (Brazil)': '🇧🇷',
-  'Portuguese (Portugal)': '🇵🇹',
-  Romanian: '🇷🇴',
-  Russian: '🇷🇺',
-  Swedish: '🇸🇪',
-  Thai: '🇹🇭',
-  Turkish: '🇹🇷',
-  Ukrainian: '🇺🇦',
-  Urdu: '🇵🇰',
-  Vietnamese: '🇻🇳',
+// 狭いレールでは言語名を出す幅がないため、⇆ アイコンの下に地域コードを添えて現在の翻訳先を示す。
+// 国旗絵文字は Windows では結局この地域コード文字で描画されるので、最初から文字として出して環境差をなくす。
+const TARGET_LANGUAGE_REGION_CODES: Record<NativeLanguage, string> = {
+  Japanese: 'JP',
+  English: 'US',
+  Korean: 'KR',
+  'Chinese (Simplified)': 'CN',
+  'Chinese (Traditional)': 'TW',
+  Spanish: 'ES',
+  French: 'FR',
+  German: 'DE',
+  Arabic: 'SA',
+  Bengali: 'BD',
+  Czech: 'CZ',
+  Danish: 'DK',
+  Dutch: 'NL',
+  Finnish: 'FI',
+  Greek: 'GR',
+  Hebrew: 'IL',
+  Hindi: 'IN',
+  Hungarian: 'HU',
+  Indonesian: 'ID',
+  Italian: 'IT',
+  Malay: 'MY',
+  Norwegian: 'NO',
+  Persian: 'IR',
+  Polish: 'PL',
+  'Portuguese (Brazil)': 'BR',
+  'Portuguese (Portugal)': 'PT',
+  Romanian: 'RO',
+  Russian: 'RU',
+  Swedish: 'SE',
+  Thai: 'TH',
+  Turkish: 'TR',
+  Ukrainian: 'UA',
+  Urdu: 'PK',
+  Vietnamese: 'VN',
 };
 
 function TargetLanguageSelect({
@@ -245,26 +247,17 @@ function TargetLanguageSelect({
     () =>
       NATIVE_LANGUAGE_OPTIONS.map((option) => ({
         value: option.value,
-        label: (
-          <>
-            <span className="language-option-flag" aria-hidden="true">
-              {TARGET_LANGUAGE_FLAGS[option.value]}
-            </span>
-            <span>{formatLanguageName(option.value)}</span>
-          </>
-        ),
+        label: formatLanguageName(option.value),
       })),
     [formatLanguageName],
   );
+  // 言語名が見える場所では地域コードは重複情報になるため、レール以外では出さない。
   const selectedLabel = compact ? (
-    <span aria-hidden="true">{TARGET_LANGUAGE_FLAGS[value]}</span>
+    <span className="language-region-code" aria-hidden="true">
+      {TARGET_LANGUAGE_REGION_CODES[value]}
+    </span>
   ) : (
-    <>
-      <span className="language-chip-flag" aria-hidden="true">
-        {TARGET_LANGUAGE_FLAGS[value]}
-      </span>
-      <span className="language-chip-name">{formatLanguageName(value)}</span>
-    </>
+    <span className="language-chip-name">{formatLanguageName(value)}</span>
   );
   return (
     <div className={className}>
@@ -336,7 +329,7 @@ function MiniRail({
   readonly onOpenSettings: () => void;
   readonly inert: boolean;
 }): React.JSX.Element {
-  const { t } = useI18n();
+  const { t, formatLanguageName } = useI18n();
   const historyButtonRef = useRef<HTMLButtonElement>(null);
   const railRef = useRef<HTMLDivElement>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -371,7 +364,7 @@ function MiniRail({
               value={targetLanguage}
               onChange={onTargetLanguageChange}
             />
-            <MiniRailTooltip label={t('main.translateLanguage')} />
+            <MiniRailTooltip label={formatLanguageName(targetLanguage)} />
           </div>
         )}
         <div className="mini-rail-tool">
@@ -1996,6 +1989,11 @@ export function MainView(): React.JSX.Element {
             <IdleMascot disabled={onboardingActive || settingsRendered} />
           </button>
           <div className="sidebar-language-tools">
+            {/* 参考デザインに合わせ、キャプチャは言語チップの左に控えめなアイコンとして置く。 */}
+            <ScreenCaptureButton
+              disabled={screenCapturePending}
+              onClick={() => void captureScreen()}
+            />
             {sidebarLanguageVisible && (
               <TargetLanguageSelect
                 className="sidebar-language"
@@ -2003,10 +2001,6 @@ export function MainView(): React.JSX.Element {
                 onChange={setTargetLanguageOverride}
               />
             )}
-            <ScreenCaptureButton
-              disabled={screenCapturePending}
-              onClick={() => void captureScreen()}
-            />
           </div>
         </div>
         <button className="new-translation" type="button" onClick={goHome}>
