@@ -1383,6 +1383,20 @@ body.sidebar-resizing * {
   min-height: 72px;
 }
 
+/* 1行目は32pxのアイコンと同じ高さ。行の上下に余白を割り振り、プレースホルダーと
+   入力文字をアイコンの縦中央へ揃える。展開後も複数行の先頭行がアイコンと揃う。 */
+.another-text-bar .inline-context-editor {
+  padding: 4px 0;
+}
+
+/* 展開時は1行目が伸びるため、中央揃えのままだとアイコンが入力欄の中ほどへ下がる。
+   参考動画と同じく、アイコンは先頭行に留めて送信ボタンだけを下段に出す。 */
+.another-text-bar.expanded > .quick-settings-anchor,
+.another-text-bar.expanded > .another-text-style-button,
+.another-text-bar.expanded > .another-text-image-button {
+  align-self: start;
+}
+
 .another-text-bar.expanded .inline-context-editor {
   min-height: 72px;
 }

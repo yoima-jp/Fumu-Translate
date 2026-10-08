@@ -421,6 +421,8 @@ function MiniRail({
                     onClick={() => {
                       setHistoryOpen(false);
                       onHistorySelect(item.id);
+                      // 押した行はポップオーバーごと消えるため、キーボード操作の起点を履歴ボタンへ戻す。
+                      window.requestAnimationFrame(() => historyButtonRef.current?.focus());
                     }}
                   >
                     {item.sourceText}
