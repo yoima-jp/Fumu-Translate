@@ -2,9 +2,11 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
   ArrowUp,
   ChevronRight,
+  History as HistoryIcon,
   Image as ImageIcon,
   MessagesSquare,
   PenLine,
+  ScanText,
   Settings as SettingsIcon,
   SlidersHorizontal,
 } from 'lucide-react';
@@ -40,6 +42,7 @@ import { displayedTargetLanguage } from './language-target';
 import { shouldOpenExternalTranslation } from './external-translation-state';
 import { displayAccelerator } from './shortcut-display';
 import { ConversationTranslationFlow, ConversationTurnResult } from './ConversationTranslationFlow';
+import { AnotherTextBar, type AnotherTextSubmission } from './AnotherTextBar';
 import {
   completedConversationResult,
   conversationContextForTurns,
@@ -71,6 +74,15 @@ const INITIAL_STATUS: DesktopStatus = {
 };
 const INITIAL_POPUP: PopupViewState = { phase: 'idle', requestId: null };
 const MAX_IMAGE_INPUT_BYTES = 20 * 1024 * 1024;
+const DEFAULT_SIDEBAR_WIDTH = 276;
+const MIN_SIDEBAR_WIDTH = 200;
+const MAX_SIDEBAR_WIDTH = 420;
+// 表示上の好みだけを保持し、同期対象になるアプリ設定スキーマには含めない。
+const SIDEBAR_WIDTH_STORAGE_KEY = 'fumu.main.sidebarWidth';
+
+function clampSidebarWidth(width: number): number {
+  return Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, Math.round(width)));
+}
 
 class ImageInputTooLargeError extends Error {}
 
@@ -183,10 +195,12 @@ function TargetLanguageSelect({
   value,
   onChange,
   className,
+  compact = false,
 }: {
   readonly value: NativeLanguage;
   readonly onChange: (value: NativeLanguage) => void;
   readonly className: string;
+  readonly compact?: boolean;
 }): React.JSX.Element {
   const { t, formatLanguageName } = useI18n();
   const targetLanguageOptions = useMemo(
@@ -197,15 +211,180 @@ function TargetLanguageSelect({
       })),
     [formatLanguageName],
   );
+  const selectedShortLanguage = compact
+    ? NATIVE_LANGUAGE_OPTIONS.find((option) => option.value === value)
+        ?.tag.split('-')[0]
+        ?.toUpperCase()
+    : undefined;
   return (
     <div className={className}>
       <SoftSelect
         label={t('main.targetLanguage')}
         value={value}
         options={targetLanguageOptions}
-        selectedPrefix="⇄ "
+        {...(selectedShortLanguage === undefined ? {} : { selectedLabel: selectedShortLanguage })}
+        selectedPrefix={compact ? '' : '⇄ '}
         onChange={onChange}
       />
+    </div>
+  );
+}
+
+function ScreenCaptureButton({
+  disabled,
+  onClick,
+}: {
+  readonly disabled: boolean;
+  readonly onClick: () => void;
+}): React.JSX.Element {
+  const { t } = useI18n();
+  return (
+    <button
+      className="sidebar-capture"
+      type="button"
+      aria-label={t('main.translateScreen')}
+      title={t('main.translateScreen')}
+      disabled={disabled}
+      onClick={onClick}
+    >
+      <ScanText size={19} aria-hidden="true" />
+    </button>
+  );
+}
+
+function MiniRail({
+  targetLanguage,
+  showTargetLanguage,
+  onTargetLanguageChange,
+  historyItems,
+  selectedHistoryId,
+  onHome,
+  onCapture,
+  capturePending,
+  onHistorySelect,
+  onShowAllHistory,
+  allHistoryButtonRef,
+  onOpenSettings,
+  inert,
+}: {
+  readonly targetLanguage: NativeLanguage;
+  readonly showTargetLanguage: boolean;
+  readonly onTargetLanguageChange: (value: NativeLanguage) => void;
+  readonly historyItems: readonly HistoryListItem[];
+  readonly selectedHistoryId: string | null;
+  readonly onHome: () => void;
+  readonly onCapture: () => void;
+  readonly capturePending: boolean;
+  readonly onHistorySelect: (id: string) => void;
+  readonly onShowAllHistory: () => void;
+  readonly allHistoryButtonRef: React.RefObject<HTMLButtonElement | null>;
+  readonly onOpenSettings: () => void;
+  readonly inert: boolean;
+}): React.JSX.Element {
+  const { t } = useI18n();
+  const historyButtonRef = useRef<HTMLButtonElement>(null);
+  const railRef = useRef<HTMLDivElement>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  useEffect(() => {
+    if (!historyOpen) return;
+    const closeOutside = (event: MouseEvent): void => {
+      if (!railRef.current?.contains(event.target as Node)) setHistoryOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent): void => {
+      if (event.defaultPrevented || event.key !== 'Escape') return;
+      event.preventDefault();
+      event.stopPropagation();
+      setHistoryOpen(false);
+      window.requestAnimationFrame(() => historyButtonRef.current?.focus());
+    };
+    document.addEventListener('mousedown', closeOutside);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('mousedown', closeOutside);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [historyOpen]);
+
+  return (
+    <div ref={railRef} className="mini-rail" inert={inert}>
+      {showTargetLanguage && (
+        <TargetLanguageSelect
+          className="mini-rail-language"
+          compact
+          value={targetLanguage}
+          onChange={onTargetLanguageChange}
+        />
+      )}
+      <button
+        className="mini-rail-button"
+        type="button"
+        aria-label={t('main.newTranslation')}
+        title={t('main.newTranslation')}
+        onClick={onHome}
+      >
+        <PenLine size={19} aria-hidden="true" />
+      </button>
+      <ScreenCaptureButton disabled={capturePending} onClick={onCapture} />
+      <div className="mini-rail-history" data-open={historyOpen || undefined}>
+        <button
+          ref={(element) => {
+            historyButtonRef.current = element;
+            allHistoryButtonRef.current = element;
+          }}
+          className="mini-rail-button"
+          type="button"
+          aria-label={t('main.history')}
+          title={t('main.history')}
+          aria-haspopup="dialog"
+          aria-expanded={historyOpen}
+          onClick={() => setHistoryOpen((current) => !current)}
+        >
+          <HistoryIcon size={19} aria-hidden="true" />
+        </button>
+        {historyOpen && (
+          <div className="mini-rail-history-popover" role="dialog" aria-label={t('main.history')}>
+            <div className="mini-rail-history-items">
+              {historyItems.slice(0, 6).map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={selectedHistoryId === item.id ? 'selected' : undefined}
+                  aria-current={selectedHistoryId === item.id ? 'page' : undefined}
+                  title={item.sourceText}
+                  onClick={() => {
+                    setHistoryOpen(false);
+                    onHistorySelect(item.id);
+                  }}
+                >
+                  {item.sourceText}
+                </button>
+              ))}
+              {historyItems.length === 0 && <p>{t('history.empty')}</p>}
+            </div>
+            <button
+              className="mini-rail-show-all"
+              type="button"
+              onClick={() => {
+                setHistoryOpen(false);
+                onShowAllHistory();
+              }}
+            >
+              {t('main.showAllHistory')}
+            </button>
+          </div>
+        )}
+      </div>
+      <div className="mini-rail-footer">
+        <button
+          className="sidebar-settings"
+          type="button"
+          aria-label={t('main.openSettings')}
+          title={t('main.openSettings')}
+          onClick={onOpenSettings}
+        >
+          <SettingsIcon size={19} aria-hidden="true" />
+        </button>
+      </div>
     </div>
   );
 }
@@ -346,6 +525,10 @@ function Composer({
   initialConversation,
   pendingImage,
   onPendingImageConsumed,
+  pendingSubmission,
+  onPendingSubmissionConsumed,
+  focusInputRequestId,
+  onInputFocusRequestHandled,
 }: {
   settings: SettingsSnapshot | null;
   status: DesktopStatus;
@@ -361,6 +544,10 @@ function Composer({
   /** 入力欄以外（どの画面でも）に貼り付け・ドロップされた画像。受け取ったら一度だけ読み取る。 */
   pendingImage: { readonly id: number; readonly file: File } | null;
   onPendingImageConsumed(): void;
+  pendingSubmission: { readonly id: number; readonly submission: AnotherTextSubmission } | null;
+  onPendingSubmissionConsumed(): void;
+  focusInputRequestId: string | null;
+  onInputFocusRequestHandled(requestId: string): void;
 }) {
   const { t } = useI18n();
   const initialConversationLastTurn = initialConversation?.turns.at(-1) ?? null;
@@ -386,14 +573,22 @@ function Composer({
     readonly appliedInstructions: readonly AppliedTranslationInstruction[];
     readonly previousRequestId: string | null;
   } | null>(null);
-  const [text, setText] = useState('');
-  const [inlineContexts, setInlineContexts] = useState<readonly string[]>([]);
+  const [text, setText] = useState(() => pendingSubmission?.submission.text ?? '');
+  const [inlineContexts, setInlineContexts] = useState<readonly string[]>(
+    () => pendingSubmission?.submission.inlineContexts ?? [],
+  );
   const [resultInstructions, setResultInstructions] = useState<
     readonly AppliedTranslationInstruction[]
   >([]);
-  const [styleAdjustEnabled, setStyleAdjustEnabled] = useState(false);
-  const [styleAdjustRendered, setStyleAdjustRendered] = useState(false);
-  const [selectedWritingStyleIds, setSelectedWritingStyleIds] = useState<readonly string[]>([]);
+  const [styleAdjustEnabled, setStyleAdjustEnabled] = useState(
+    () => (pendingSubmission?.submission.writingStyleIds.length ?? 0) > 0,
+  );
+  const [styleAdjustRendered, setStyleAdjustRendered] = useState(
+    () => (pendingSubmission?.submission.writingStyleIds.length ?? 0) > 0,
+  );
+  const [selectedWritingStyleIds, setSelectedWritingStyleIds] = useState<readonly string[]>(
+    () => pendingSubmission?.submission.writingStyleIds ?? [],
+  );
   const [additionalInstructionOpen, setAdditionalInstructionOpen] = useState(false);
   const [additionalInstruction, setAdditionalInstruction] = useState('');
   const [saveStyleOpen, setSaveStyleOpen] = useState(false);
@@ -436,7 +631,6 @@ function Composer({
   const resultImageUrlRef = useRef<string | null>(null);
   const imageExtractionActiveRef = useRef(false);
   const imageFileInputRef = useRef<HTMLInputElement>(null);
-  const [editorKey, setEditorKey] = useState(0);
   const quickSettingsId = useId();
   const conversationReady =
     mode !== 'conversation' ||
@@ -474,11 +668,15 @@ function Composer({
   const submit = (submission?: {
     readonly text: string;
     readonly direction?: ConversationDirection;
-  }): void => {
+    readonly inlineContexts?: readonly string[];
+    readonly writingStyleIds?: readonly string[];
+    readonly forceText?: boolean;
+  }): Promise<boolean> => {
     const value = (submission?.text ?? text).trim();
+    const submittedMode = submission?.forceText === true ? 'text' : mode;
     const submittedDirection = submission?.direction ?? conversationDirection;
     const submittedConversationReady =
-      mode !== 'conversation' ||
+      submittedMode !== 'conversation' ||
       submittedDirection === 'outgoing' ||
       settings?.nativeLanguage != null;
     if (
@@ -486,20 +684,37 @@ function Composer({
       // 画像の読み取り中に手動で翻訳を始めると、読み取り完了時の翻訳開始と競合して
       // 書き起こし文が入力欄ごと隠れてしまう。読み取り完了側の送信だけを通す。
       imageExtractionActiveRef.current ||
+      imageStage?.phase === 'reading' ||
       !value ||
       !status.translationConfigured ||
       !submittedConversationReady
     )
-      return;
+      return Promise.resolve(false);
+    const submittedContexts = submission?.inlineContexts ?? inlineContexts;
+    const submittedStyleIds = submission?.writingStyleIds ?? selectedWritingStyleIds;
+    const submittedStyles = composerStyles.filter((style) => submittedStyleIds.includes(style.id));
+    const submittedAdditionalInstruction =
+      submission?.writingStyleIds === undefined ? additionalInstruction : '';
+    const submittedWritingStyle =
+      submission?.forceText === true
+        ? composeWritingStyleInstruction({
+            mode: 'text',
+            enabled: submittedStyleIds.length > 0,
+            styles: submittedStyles,
+            additionalInstruction: submittedAdditionalInstruction,
+            additionalInstructionLabel: t('main.additionalInstruction'),
+          })
+        : activeWritingStyle;
     const submissionEpoch = ++submissionEpochRef.current;
     // 翻訳後も「実際に送信した指示」を表示するため、送信時点で表示用データを固定する。
     // 文体UIの現在値から都度再計算すると、翻訳中の設定変更で結果の表示とリクエストがずれる。
     const submittedInstructions = appliedTranslationInstructions({
-      inlineContexts,
-      writingStyles: activeWritingStyle === null ? [] : selectedWritingStyles,
-      additionalInstruction: activeWritingStyle === null ? '' : additionalInstruction,
+      inlineContexts: submittedContexts,
+      writingStyles: submittedWritingStyle === null ? [] : submittedStyles,
+      additionalInstruction: submittedWritingStyle === null ? '' : submittedAdditionalInstruction,
     });
     const activeState =
+      submittedMode === 'conversation' &&
       state.phase === 'selection' &&
       activeConversationSubmission !== null &&
       state.requestId !== activeConversationSubmission.previousRequestId
@@ -519,13 +734,15 @@ function Composer({
         : null;
     const activeCompletedTurn = liveCompletedTurn ?? resumedConversationTurn;
     const previousConversationTurns =
-      mode === 'conversation' && activeCompletedTurn !== null
+      submittedMode === 'conversation' && activeCompletedTurn !== null
         ? [...conversationTurns, activeCompletedTurn]
         : conversationTurns;
     const conversationContext =
-      mode === 'conversation' ? conversationContextForTurns(previousConversationTurns) : [];
+      submittedMode === 'conversation'
+        ? conversationContextForTurns(previousConversationTurns)
+        : [];
     const requestedTargetLanguage =
-      mode !== 'conversation'
+      submittedMode !== 'conversation'
         ? targetLanguageOverride
         : submittedDirection === 'incoming'
           ? null
@@ -534,7 +751,7 @@ function Composer({
     submittingRef.current = true;
     setSubmitting(true);
     setSubmitError(null);
-    if (mode === 'conversation') {
+    if (submittedMode === 'conversation') {
       setConversationTurns(previousConversationTurns);
       setResumedConversationTurn(null);
       setActiveConversationSubmission({
@@ -544,34 +761,49 @@ function Composer({
         appliedInstructions: submittedInstructions,
         previousRequestId: state.phase === 'selection' ? state.requestId : null,
       });
+    } else if (submission?.forceText === true) {
+      setMode('text');
+      setConversationTurns([]);
+      setResumedConversationTurn(null);
+      setActiveConversationSubmission(null);
+      setConversationSessionId(crypto.randomUUID());
+      onConversationRoutingChange('text', 'incoming');
     }
-    void window.fumu
-      .translateText(
-        value,
-        mode === 'conversation' ? submittedDirection : null,
-        activeWritingStyle,
-        inlineContexts,
-        submittedInstructions,
-        requestedTargetLanguage,
-        conversationContext,
-        mode === 'conversation' ? conversationSessionId : null,
-      )
-      // The main process publishes the new selection state before this IPC invocation resolves.
-      // Keep the rich editor mounted until then so a rejected invocation cannot remount an empty
-      // editor while leaving an invisible parent submission value behind.
-      .then(() => {
-        if (submissionEpoch !== submissionEpochRef.current) return;
-        submittingRef.current = false;
-        setSubmitting(false);
-        setResultInstructions(submittedInstructions);
-        setDrafting(false);
-      })
-      .catch(() => {
-        if (submissionEpoch !== submissionEpochRef.current) return;
-        submittingRef.current = false;
-        setSubmitting(false);
-        setSubmitError(t('main.startError'));
-      });
+    return (
+      window.fumu
+        .translateText(
+          value,
+          submittedMode === 'conversation' ? submittedDirection : null,
+          submittedWritingStyle,
+          submittedContexts,
+          submittedInstructions,
+          requestedTargetLanguage,
+          conversationContext,
+          submittedMode === 'conversation' ? conversationSessionId : null,
+        )
+        // The main process publishes the new selection state before this IPC invocation resolves.
+        // Keep the rich editor mounted until then so a rejected invocation cannot remount an empty
+        // editor while leaving an invisible parent submission value behind.
+        .then(() => {
+          if (submissionEpoch !== submissionEpochRef.current) return false;
+          submittingRef.current = false;
+          setSubmitting(false);
+          if (submission?.forceText === true) {
+            clearImageStage();
+            clearResultImage();
+          }
+          setResultInstructions(submittedInstructions);
+          setDrafting(false);
+          return true;
+        })
+        .catch(() => {
+          if (submissionEpoch !== submissionEpochRef.current) return false;
+          submittingRef.current = false;
+          setSubmitting(false);
+          setSubmitError(t('main.startError'));
+          return false;
+        })
+    );
   };
   const submitRef = useRef(submit);
   submitRef.current = submit;
@@ -588,29 +820,6 @@ function Composer({
       resultImageUrlRef.current = null;
     }
     setResultImage(null);
-  };
-  const startAnotherText = (): void => {
-    // 古い翻訳のIPC完了が、新しい入力画面を結果画面へ戻さないよう無効化する。
-    submissionEpochRef.current += 1;
-    imageRequestIdRef.current += 1;
-    if (imageExtractionActiveRef.current) {
-      imageExtractionActiveRef.current = false;
-      void window.fumu.cancelImageTextExtraction().catch(() => undefined);
-    }
-    clearImageStage();
-    clearResultImage();
-    setText('');
-    setInlineContexts([]);
-    setResultInstructions([]);
-    setConversationTurns([]);
-    setConversationSessionId(crypto.randomUUID());
-    setActiveConversationSubmission(null);
-    setResumedConversationTurn(null);
-    submittingRef.current = false;
-    setSubmitting(false);
-    setSubmitError(null);
-    setEditorKey((value) => value + 1);
-    setDrafting(true);
   };
   const readImage = (file: File, extractionMode: 'configured' | 'model' = 'configured'): void => {
     // 翻訳の開始中に読み取りを始めると、開始完了で入力欄が閉じて書き起こし文が翻訳されない。
@@ -724,6 +933,21 @@ function Composer({
       }
     })();
   };
+  const readImageFromAnotherTextBar = (file: File): void => {
+    if (!drafting) {
+      clearResultImage();
+      setDrafting(true);
+      if (mode === 'conversation') {
+        setMode('text');
+        setConversationTurns([]);
+        setResumedConversationTurn(null);
+        setActiveConversationSubmission(null);
+        setConversationSessionId(crypto.randomUUID());
+        onConversationRoutingChange('text', 'incoming');
+      }
+    }
+    readImage(file);
+  };
   useEffect(() => {
     if (imageStage?.phase !== 'translating') return;
     if (!drafting) {
@@ -746,6 +970,20 @@ function Composer({
     readImage(pendingImage.file);
     onPendingImageConsumed();
   }, [pendingImage?.id]);
+  useEffect(() => {
+    if (pendingSubmission === null) return;
+    onPendingSubmissionConsumed();
+    void submitRef.current({ ...pendingSubmission.submission, forceText: true });
+  }, [pendingSubmission?.id]);
+  useEffect(() => {
+    if (focusInputRequestId === null) return;
+    const requestId = focusInputRequestId;
+    const frame = window.requestAnimationFrame(() => {
+      editorRef.current?.focus();
+      onInputFocusRequestHandled(requestId);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [focusInputRequestId, onInputFocusRequestHandled]);
   useEffect(
     () => () => {
       imageRequestIdRef.current += 1;
@@ -916,25 +1154,31 @@ function Composer({
   return (
     <div className="translate-workspace composer-workspace">
       {showingResult ? (
-        <>
-          <div className="nani-result-actions">
-            <button className="nani-new-bar" type="button" onClick={startAnotherText}>
-              <SlidersHorizontal size={19} />
-              <span>{t('main.anotherText')}</span>
-              <PenLine size={19} />
-            </button>
-          </div>
-        </>
+        <div className="nani-result-actions">
+          <AnotherTextBar
+            settings={settings}
+            enterToSend={settings?.enterToSend === true}
+            translationConfigured={status.translationConfigured}
+            busy={submitting || imageStage?.phase === 'reading'}
+            onSubmit={(value) => submit({ ...value, forceText: true })}
+            onImageFile={readImageFromAnotherTextBar}
+            openWritingStyles={openWritingStyles}
+          />
+        </div>
       ) : (
         <>
           {showingImageStage && (
             <>
               <div className="nani-result-actions">
-                <button className="nani-new-bar" type="button" onClick={startAnotherText}>
-                  <SlidersHorizontal size={19} />
-                  <span>{t('main.anotherText')}</span>
-                  <PenLine size={19} />
-                </button>
+                <AnotherTextBar
+                  settings={settings}
+                  enterToSend={settings?.enterToSend === true}
+                  translationConfigured={status.translationConfigured}
+                  busy={submitting || imageStage?.phase === 'reading'}
+                  onSubmit={(value) => submit({ ...value, forceText: true })}
+                  onImageFile={readImageFromAnotherTextBar}
+                  openWritingStyles={openWritingStyles}
+                />
               </div>
               <section className="nani-result-flow" aria-live="polite">
                 <article
@@ -1166,13 +1410,20 @@ function Composer({
                 </div>
               )}
               <InlineContextEditor
-                key={editorKey}
                 ref={editorRef}
                 label={mode === 'conversation' ? t('main.messageLabel') : t('main.textLabel')}
                 placeholder={
                   mode === 'conversation' ? t('main.messagePlaceholder') : t('main.textPlaceholder')
                 }
                 submitOnEnter={settings?.enterToSend === true}
+                {...(pendingSubmission === null
+                  ? {}
+                  : {
+                      initialValue: {
+                        text: pendingSubmission.submission.text,
+                        inlineContexts: pendingSubmission.submission.inlineContexts,
+                      },
+                    })}
                 onImageFile={readImage}
                 onChange={(value) => {
                   setText(value.text);
@@ -1352,15 +1603,36 @@ function Composer({
 function HistoryTranslationResult({
   detail,
   onResumeConversation,
+  settings,
+  translationConfigured,
+  onSubmit,
+  onImageFile,
+  openWritingStyles,
 }: {
   readonly detail: HistoryDetail;
   readonly onResumeConversation: (conversation: ResumableConversation) => void;
+  readonly settings: SettingsSnapshot | null;
+  readonly translationConfigured: boolean;
+  readonly onSubmit: (submission: AnotherTextSubmission) => Promise<boolean>;
+  readonly onImageFile: (file: File) => void;
+  readonly openWritingStyles: () => void;
 }) {
   const { t } = useI18n();
   const conversationTurns = conversationTranslationTurnsFromHistory(detail.results);
   if (conversationTurns.length > 0) {
     return (
       <div className="translate-workspace history-result-workspace">
+        <div className="nani-result-actions">
+          <AnotherTextBar
+            settings={settings}
+            enterToSend={settings?.enterToSend === true}
+            translationConfigured={translationConfigured}
+            busy={false}
+            onSubmit={onSubmit}
+            onImageFile={onImageFile}
+            openWritingStyles={openWritingStyles}
+          />
+        </div>
         <section className="conversation-flow" aria-label={t('main.conversation')}>
           {conversationTurns.map((turn) => (
             <ConversationTurnResult key={turn.id} turn={turn} />
@@ -1387,6 +1659,17 @@ function HistoryTranslationResult({
   const historyInstructions = initialTranslation?.appliedInstructions ?? [];
   return (
     <div className="translate-workspace history-result-workspace">
+      <div className="nani-result-actions">
+        <AnotherTextBar
+          settings={settings}
+          enterToSend={settings?.enterToSend === true}
+          translationConfigured={translationConfigured}
+          busy={false}
+          onSubmit={onSubmit}
+          onImageFile={onImageFile}
+          openWritingStyles={openWritingStyles}
+        />
+      </div>
       <SharedTranslationResultPanel
         sourceText={detail.sourceText}
         appliedInstructions={historyInstructions}
@@ -1436,7 +1719,34 @@ export function MainView(): React.JSX.Element {
     readonly id: number;
     readonly file: File;
   } | null>(null);
+  const [pendingSubmission, setPendingSubmission] = useState<{
+    readonly id: number;
+    readonly submission: AnotherTextSubmission;
+  } | null>(null);
   const [imageDragActive, setImageDragActive] = useState(false);
+  const [screenCapturePending, setScreenCapturePending] = useState(false);
+  const screenCapturePendingRef = useRef(false);
+  const [sidebarDrawerOpen, setSidebarDrawerOpen] = useState(false);
+  const [focusInputRequestId, setFocusInputRequestId] = useState<string | null>(null);
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    try {
+      const storedWidth = Number(window.localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY));
+      return Number.isFinite(storedWidth) && storedWidth > 0
+        ? clampSidebarWidth(storedWidth)
+        : DEFAULT_SIDEBAR_WIDTH;
+    } catch {
+      return DEFAULT_SIDEBAR_WIDTH;
+    }
+  });
+  const [sidebarResizing, setSidebarResizing] = useState(false);
+  const sidebarResizeDragRef = useRef<{
+    readonly pointerId: number;
+    readonly startX: number;
+    readonly startWidth: number;
+  } | null>(null);
+  const drawerTriggerRef = useRef<HTMLButtonElement>(null);
+  const sidebarRef = useRef<HTMLElement>(null);
+  const handledManualRequestIdRef = useRef<string | null>(null);
   const modalRef = useRef<HTMLDivElement>(null);
   const logoTargetRef = useRef<HTMLButtonElement>(null);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
@@ -1447,6 +1757,8 @@ export function MainView(): React.JSX.Element {
   const translationState = useMainTranslation();
   const targetLanguage = targetLanguageOverride ?? displayedTargetLanguage(settingsState.settings);
   const onboardingActive = settingsState.settings?.onboardingCompleted !== true;
+  const sidebarLanguageVisible =
+    composerRouting.mode !== 'conversation' || composerRouting.direction === 'outgoing';
   const goHome = (): void => {
     // 「新しく翻訳」は入力欄だけでなく、メイン画面に残る外部選択結果も閉じる操作。
     // 同じrequestをComposer再生成時に再検出すると、古い結果へ即座に戻ってしまう。
@@ -1459,6 +1771,7 @@ export function MainView(): React.JSX.Element {
     setHistoryError(null);
     setInitialConversation(null);
     setComposerRouting({ mode: 'text', direction: 'incoming' });
+    setSidebarDrawerOpen(false);
     setComposerKey((value) => value + 1);
   };
   // どの画面にいても、画像の貼り付け・ドロップで新しい画像翻訳を始める。
@@ -1470,6 +1783,59 @@ export function MainView(): React.JSX.Element {
     goHome();
     setPendingImage((current) => ({ id: (current?.id ?? 0) + 1, file }));
   };
+  const captureScreen = async (): Promise<void> => {
+    if (screenCapturePendingRef.current || settingsRendered || onboardingActive) return;
+    screenCapturePendingRef.current = true;
+    setScreenCapturePending(true);
+    try {
+      const image = await window.fumu.captureScreenRegionForMain();
+      if (image !== null) {
+        const data = new ArrayBuffer(image.data.byteLength);
+        new Uint8Array(data).set(image.data);
+        startImageTranslationRef.current(
+          new File([data], 'screenshot.png', { type: image.mediaType }),
+        );
+      }
+    } catch {
+      // 取消や失敗はmain側の契約どおり画面を切り替えず、撮影ボタンを再度使える状態へ戻す。
+    } finally {
+      screenCapturePendingRef.current = false;
+      setScreenCapturePending(false);
+    }
+  };
+  useEffect(() => {
+    if (sidebarResizing) return;
+    try {
+      window.localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(sidebarWidth));
+    } catch {
+      // 保存できない環境でも、現在のウィンドウ内では幅変更を使えるようにする。
+    }
+  }, [sidebarResizing, sidebarWidth]);
+  useEffect(() => {
+    document.body.classList.toggle('sidebar-resizing', sidebarResizing);
+    return () => document.body.classList.remove('sidebar-resizing');
+  }, [sidebarResizing]);
+  useEffect(() => {
+    if (!sidebarDrawerOpen) return;
+    const frame = window.requestAnimationFrame(() => {
+      const firstHistoryItem =
+        sidebarRef.current?.querySelector<HTMLButtonElement>('.history-nav button');
+      (
+        firstHistoryItem ?? sidebarRef.current?.querySelector<HTMLButtonElement>('.new-translation')
+      )?.focus();
+    });
+    const closeOnEscape = (event: KeyboardEvent): void => {
+      if (event.defaultPrevented || event.key !== 'Escape') return;
+      event.preventDefault();
+      setSidebarDrawerOpen(false);
+      window.requestAnimationFrame(() => drawerTriggerRef.current?.focus());
+    };
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [sidebarDrawerOpen]);
   useEffect(() => {
     const imageFileFrom = (data: DataTransfer | null): File | null => {
       if (data === null) return null;
@@ -1536,7 +1902,34 @@ export function MainView(): React.JSX.Element {
     setInitialConversation(null);
     setSettingsOpen(false);
     setSettingsRendered(false);
+    setSidebarDrawerOpen(false);
   }, [dismissedTranslationRequestId, translationState.phase, translationState.requestId]);
+  useEffect(() => {
+    // 同じmanual requestの再通知でComposerを作り直さないよう、requestId単位で一度だけ処理する。
+    if (
+      translationState.phase !== 'manual' ||
+      translationState.requestId === handledManualRequestIdRef.current
+    ) {
+      return;
+    }
+    handledManualRequestIdRef.current = translationState.requestId;
+    if (settingsCloseTimerRef.current !== null) {
+      window.clearTimeout(settingsCloseTimerRef.current);
+      settingsCloseTimerRef.current = null;
+    }
+    setSettingsOpen(false);
+    setSettingsRendered(false);
+    setSettingsTarget('general');
+    setPage('translate');
+    setSelectedHistoryId(null);
+    setHistoryDetail(null);
+    setHistoryError(null);
+    setInitialConversation(null);
+    setComposerRouting({ mode: 'text', direction: 'incoming' });
+    setSidebarDrawerOpen(false);
+    setFocusInputRequestId(translationState.requestId);
+    setComposerKey((value) => value + 1);
+  }, [translationState.phase, translationState.requestId]);
   useEffect(() => {
     document.documentElement.dataset.theme = appearance;
   }, [appearance]);
@@ -1567,12 +1960,16 @@ export function MainView(): React.JSX.Element {
     };
   }, [page, selectedHistoryId, t]);
   const openSettings = (target: SettingsTarget = 'general'): void => {
+    setSidebarDrawerOpen(false);
     if (settingsCloseTimerRef.current !== null) {
       window.clearTimeout(settingsCloseTimerRef.current);
       settingsCloseTimerRef.current = null;
     }
-    restoreFocusRef.current =
-      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    restoreFocusRef.current = sidebarDrawerOpen
+      ? drawerTriggerRef.current
+      : document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
     setSettingsTarget(target);
     setSettingsRendered(true);
     setSettingsOpen(true);
@@ -1636,8 +2033,13 @@ export function MainView(): React.JSX.Element {
   return (
     <main
       className={`main-window nani-main-window${onboardingActive ? ' is-onboarding' : ''}${onboardingRevealing ? ' is-onboarding-revealing' : ''}`}
+      style={{ '--nani-sidebar-width': `${sidebarWidth}px` } as React.CSSProperties}
     >
-      <aside className="nani-sidebar" inert={settingsRendered || onboardingActive}>
+      <aside
+        ref={sidebarRef}
+        className={`nani-sidebar${sidebarDrawerOpen ? ' is-drawer-open' : ''}`}
+        inert={settingsRendered || onboardingActive}
+      >
         <div className="sidebar-top">
           <button
             ref={logoTargetRef}
@@ -1648,14 +2050,19 @@ export function MainView(): React.JSX.Element {
           >
             <IdleMascot disabled={onboardingActive || settingsRendered} />
           </button>
-          {(composerRouting.mode !== 'conversation' ||
-            composerRouting.direction === 'outgoing') && (
-            <TargetLanguageSelect
-              className="sidebar-language"
-              value={targetLanguage}
-              onChange={setTargetLanguageOverride}
+          <div className="sidebar-language-tools">
+            <ScreenCaptureButton
+              disabled={screenCapturePending}
+              onClick={() => void captureScreen()}
             />
-          )}
+            {sidebarLanguageVisible && (
+              <TargetLanguageSelect
+                className="sidebar-language"
+                value={targetLanguage}
+                onChange={setTargetLanguageOverride}
+              />
+            )}
+          </div>
         </div>
         <button className="new-translation" type="button" onClick={goHome}>
           <PenLine size={19} />
@@ -1670,6 +2077,7 @@ export function MainView(): React.JSX.Element {
               aria-current={selectedHistoryId === item.id ? 'page' : undefined}
               title={item.sourceText}
               onClick={() => {
+                setSidebarDrawerOpen(false);
                 setSelectedHistoryId(item.id);
                 setHistoryDetail(null);
                 setPage('history');
@@ -1689,7 +2097,87 @@ export function MainView(): React.JSX.Element {
             <SettingsIcon size={19} />
           </button>
         </div>
+        <div
+          className="sidebar-resize-handle"
+          role="separator"
+          tabIndex={0}
+          aria-orientation="vertical"
+          aria-label={t('main.resizeSidebar')}
+          aria-valuenow={sidebarWidth}
+          aria-valuemin={MIN_SIDEBAR_WIDTH}
+          aria-valuemax={MAX_SIDEBAR_WIDTH}
+          onPointerDown={(event) => {
+            if (event.button !== 0) return;
+            event.preventDefault();
+            sidebarResizeDragRef.current = {
+              pointerId: event.pointerId,
+              startX: event.clientX,
+              startWidth: sidebarWidth,
+            };
+            event.currentTarget.setPointerCapture(event.pointerId);
+            setSidebarResizing(true);
+          }}
+          onPointerMove={(event) => {
+            const drag = sidebarResizeDragRef.current;
+            if (drag === null || drag.pointerId !== event.pointerId) return;
+            setSidebarWidth(clampSidebarWidth(drag.startWidth + event.clientX - drag.startX));
+          }}
+          onPointerUp={(event) => {
+            if (sidebarResizeDragRef.current?.pointerId !== event.pointerId) return;
+            sidebarResizeDragRef.current = null;
+            if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+              event.currentTarget.releasePointerCapture(event.pointerId);
+            }
+            setSidebarResizing(false);
+          }}
+          onPointerCancel={(event) => {
+            if (sidebarResizeDragRef.current?.pointerId !== event.pointerId) return;
+            sidebarResizeDragRef.current = null;
+            setSidebarResizing(false);
+          }}
+          onLostPointerCapture={(event) => {
+            if (sidebarResizeDragRef.current?.pointerId !== event.pointerId) return;
+            sidebarResizeDragRef.current = null;
+            setSidebarResizing(false);
+          }}
+          onDoubleClick={() => setSidebarWidth(DEFAULT_SIDEBAR_WIDTH)}
+          onKeyDown={(event) => {
+            if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+            event.preventDefault();
+            const amount = event.key === 'ArrowRight' ? 16 : -16;
+            setSidebarWidth((width) => clampSidebarWidth(width + amount));
+          }}
+        />
       </aside>
+      {sidebarDrawerOpen && (
+        <div
+          className="sidebar-drawer-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setSidebarDrawerOpen(false);
+          }}
+        />
+      )}
+      <MiniRail
+        targetLanguage={targetLanguage}
+        showTargetLanguage={sidebarLanguageVisible}
+        onTargetLanguageChange={setTargetLanguageOverride}
+        historyItems={historyRows}
+        selectedHistoryId={selectedHistoryId}
+        onHome={goHome}
+        onCapture={() => void captureScreen()}
+        capturePending={screenCapturePending}
+        onHistorySelect={(id) => {
+          setSelectedHistoryId(id);
+          setHistoryDetail(null);
+          setHistoryError(null);
+          setPage('history');
+        }}
+        onShowAllHistory={() => setSidebarDrawerOpen(true)}
+        allHistoryButtonRef={drawerTriggerRef}
+        onOpenSettings={() => openSettings()}
+        inert={settingsRendered || onboardingActive}
+      />
       {imageDragActive && (
         <div className="image-drop-overlay" aria-hidden="true">
           <ImageIcon size={26} />
@@ -1715,6 +2203,12 @@ export function MainView(): React.JSX.Element {
             initialConversation={initialConversation}
             pendingImage={pendingImage}
             onPendingImageConsumed={() => setPendingImage(null)}
+            pendingSubmission={pendingSubmission}
+            onPendingSubmissionConsumed={() => setPendingSubmission(null)}
+            focusInputRequestId={focusInputRequestId}
+            onInputFocusRequestHandled={(requestId) =>
+              setFocusInputRequestId((current) => (current === requestId ? null : current))
+            }
           />
         ) : (
           <>
@@ -1738,6 +2232,18 @@ export function MainView(): React.JSX.Element {
             {historyDetail && (
               <HistoryTranslationResult
                 detail={historyDetail}
+                settings={settingsState.settings}
+                translationConfigured={status.translationConfigured}
+                onImageFile={(file) => startImageTranslationRef.current(file)}
+                openWritingStyles={() => openSettings('writing-styles')}
+                onSubmit={(submission) => {
+                  setPendingSubmission((current) => ({
+                    id: (current?.id ?? 0) + 1,
+                    submission,
+                  }));
+                  goHome();
+                  return Promise.resolve(true);
+                }}
                 onResumeConversation={(conversation) => {
                   setDismissedTranslationRequestId(
                     translationState.phase === 'selection' ? translationState.requestId : null,

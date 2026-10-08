@@ -29,6 +29,8 @@ export interface InlineContextEditorValue {
 
 export interface InlineContextEditorHandle {
   appendText(text: string): InlineContextEditorValue | null;
+  focus(): void;
+  blur(): void;
 }
 
 interface MentionQuery {
@@ -204,12 +206,14 @@ export const InlineContextEditor = forwardRef<
     readonly label: string;
     readonly placeholder: string;
     readonly submitOnEnter: boolean;
+    readonly initialValue?: InlineContextEditorValue;
+    readonly onEscape?: () => void;
     readonly onChange: (value: InlineContextEditorValue) => void;
     readonly onSubmit: () => void;
     readonly onImageFile: (file: File) => void;
   }
 >(function InlineContextEditor(
-  { label, placeholder, submitOnEnter, onChange, onSubmit, onImageFile },
+  { label, placeholder, submitOnEnter, initialValue, onEscape, onChange, onSubmit, onImageFile },
   forwardedRef,
 ): React.JSX.Element {
   const { locale, t } = useI18n();
@@ -218,7 +222,10 @@ export const InlineContextEditor = forwardRef<
   const shellRef = useRef<HTMLDivElement>(null);
   const mentionRangeRef = useRef<Range | null>(null);
   const composingRef = useRef(false);
-  const [value, setValue] = useState<InlineContextEditorValue>({ text: '', inlineContexts: [] });
+  const [value, setValue] = useState<InlineContextEditorValue>(
+    () => initialValue ?? { text: '', inlineContexts: [] },
+  );
+  const initializedRef = useRef(false);
   const [mention, setMention] = useState<MentionQuery | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const [imageDragActive, setImageDragActive] = useState(false);
@@ -232,6 +239,27 @@ export const InlineContextEditor = forwardRef<
         : inlineContextCandidates(mention.query, value.inlineContexts, localizedDefaultContexts),
     [localizedDefaultContexts, mention, value.inlineContexts],
   );
+
+  useEffect(() => {
+    if (initializedRef.current) return;
+    initializedRef.current = true;
+    if (initialValue === undefined) return;
+    const editor = editorRef.current;
+    if (editor === null) return;
+    editor.replaceChildren();
+    if (initialValue.text.length > 0) editor.append(document.createTextNode(initialValue.text));
+    for (const context of initialValue.inlineContexts) {
+      const chip = document.createElement('span');
+      chip.className = 'inline-context-chip';
+      chip.contentEditable = 'false';
+      chip.dataset.inlineContext = context;
+      chip.setAttribute('role', 'note');
+      chip.setAttribute('aria-label', t('context.chipAria', { context }));
+      chip.textContent = `@[${context}]`;
+      editor.append(document.createTextNode(initialValue.text.length > 0 ? '\n' : ''), chip);
+    }
+    updatePlaceholderVisibility(editor);
+  }, [initialValue, t]);
 
   const closeMention = (): void => {
     mentionRangeRef.current = null;
@@ -410,6 +438,12 @@ export const InlineContextEditor = forwardRef<
         updatePlaceholderVisibility(editor);
         return nextValue;
       },
+      focus() {
+        editorRef.current?.focus();
+      },
+      blur() {
+        editorRef.current?.blur();
+      },
     }),
     [onChange],
   );
@@ -577,6 +611,11 @@ export const InlineContextEditor = forwardRef<
           if (event.key === 'Escape' && mention !== null) {
             event.preventDefault();
             closeMention();
+            return;
+          }
+          if (event.key === 'Escape' && onEscape !== undefined) {
+            event.preventDefault();
+            onEscape();
             return;
           }
           if (event.key === 'Backspace' && removeAdjacentMention('backward')) {

@@ -24,7 +24,7 @@ export class MainWindowManager {
       title: 'Fumu!',
       width: 960,
       height: 680,
-      minWidth: 720,
+      minWidth: 420,
       minHeight: 540,
       show: false,
       autoHideMenuBar: true,

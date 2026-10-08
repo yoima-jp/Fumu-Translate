@@ -53,6 +53,7 @@ export function SoftSelect<T extends string>({
   label,
   fullWidth = false,
   selectedPrefix = '',
+  selectedLabel,
 }: {
   readonly value: T;
   readonly options: readonly SoftSelectOption<T>[];
@@ -60,6 +61,7 @@ export function SoftSelect<T extends string>({
   readonly label: string;
   readonly fullWidth?: boolean;
   readonly selectedPrefix?: string;
+  readonly selectedLabel?: string;
 }): React.JSX.Element {
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState({ top: 0, left: 0, width: 170 });
@@ -199,7 +201,7 @@ export function SoftSelect<T extends string>({
       >
         <span>
           {selectedPrefix}
-          {selected?.label ?? value}
+          {selectedLabel ?? selected?.label ?? value}
         </span>
         <ChevronDown size={15} aria-hidden="true" />
       </button>
