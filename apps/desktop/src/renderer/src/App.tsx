@@ -127,6 +127,9 @@ function PopupView(): React.JSX.Element {
   const { t } = useI18n();
   const state = usePopupState();
   const popupRef = useRef<HTMLElement>(null);
+  // エラーから手入力へ切り替えた request。新しい request が届いたら自動的に元の表示へ戻る。
+  const [manualRequestId, setManualRequestId] = useState<string | null>(null);
+  const showingLocalManual = state.phase === 'error' && manualRequestId === state.requestId;
   usePopupTheme(state.phase);
   usePopupResize(popupRef, state);
 
@@ -168,7 +171,9 @@ function PopupView(): React.JSX.Element {
 
       {state.phase === 'manual' && <ManualContent clipboardText={state.clipboardText} />}
 
-      {state.phase === 'error' && (
+      {showingLocalManual && <ManualContent clipboardText={null} />}
+
+      {state.phase === 'error' && !showingLocalManual && (
         <section className="error-state" role="alert">
           <p>{state.messageKey === undefined ? state.message : t(state.messageKey)}</p>
           {state.action === 'retry-image-with-model' ? (
@@ -183,9 +188,9 @@ function PopupView(): React.JSX.Element {
             <button
               className="translate-button"
               type="button"
-              onClick={() => void window.fumu.triggerClipboard()}
+              onClick={() => setManualRequestId(state.requestId)}
             >
-              {t('popup.openClipboard')}
+              {t('popup.enterText')}
             </button>
           )}
         </section>

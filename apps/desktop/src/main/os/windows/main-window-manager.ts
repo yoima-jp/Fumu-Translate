@@ -4,6 +4,8 @@ import type { DesktopStatus, PopupViewState } from '../../../shared/contracts';
 import type { SettingsSnapshot } from '../../../shared/settings-contracts';
 import { IPC_CHANNELS } from '../../../shared/ipc-channels';
 
+const MAIN_WINDOW_HIDE_SETTLE_MS = 200;
+
 export class MainWindowManager {
   #window: BrowserWindow | null = null;
   #disposing = false;
@@ -111,6 +113,15 @@ export class MainWindowManager {
     // Hotkeyを押したアプリの選択状態を保ったまま、翻訳先の画面だけを表示する。
     // 選択取得後もユーザーが明示的に触れるまでは元アプリへ入力を続けられる。
     window.showInactive();
+  }
+
+  async hide(): Promise<void> {
+    const window = this.#window;
+    if (window === null || window.isDestroyed() || !window.isVisible()) return;
+    window.hide();
+    // Windowsはhide後も閉じるアニメーションの数frameが画面に残り、直後の撮影に写り込む。
+    // 実測で100ms前後かかるため、余裕を見て待ってから呼び出し元へ返す。
+    await new Promise<void>((resolve) => setTimeout(resolve, MAIN_WINDOW_HIDE_SETTLE_MS));
   }
 
   dispose(): void {

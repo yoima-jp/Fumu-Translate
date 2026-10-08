@@ -293,7 +293,7 @@ export class PopupWindowManager {
   showError(
     requestId: string,
     message: string,
-    action: 'open-clipboard' | 'retry-image-with-model' = 'open-clipboard',
+    action: 'enter-text' | 'retry-image-with-model' = 'enter-text',
     messageKey?: PopupErrorMessageKey,
   ): void {
     const window = this.#requiredWindow();
@@ -309,6 +309,12 @@ export class PopupWindowManager {
     this.#applyBounds();
     this.#sendPopupState();
     this.#showInteractive(window);
+  }
+
+  showManualInMain(requestId: string): void {
+    this.#activeSurface = 'main';
+    this.#mainState = { phase: 'manual', requestId, clipboardText: null };
+    this.#sendMainState();
   }
 
   showErrorInMain(requestId: string, message: string): void {
@@ -521,11 +527,6 @@ export class PopupWindowManager {
       kind: 'screen-center',
       point: workAreaCenter(primaryWorkArea),
     };
-    this.showError(
-      requestId,
-      '選択を取得できませんでした。',
-      'open-clipboard',
-      'popup.selectionError',
-    );
+    this.showError(requestId, '選択を取得できませんでした。', 'enter-text', 'popup.selectionError');
   }
 }

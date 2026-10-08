@@ -24,6 +24,7 @@ function createFixture(compactTranslation: boolean) {
     showCapturing: vi.fn(),
     showError: vi.fn(),
     showManual: vi.fn(),
+    showManualInMain: vi.fn(),
     showSelection: vi.fn(),
     showSelectionInMain: vi.fn(),
     showErrorInMain: vi.fn(),
@@ -75,20 +76,14 @@ describe('selection failure does not translate stale clipboard text', () => {
     expect(fixture.translate).not.toHaveBeenCalled();
     expect(fixture.popup.showSelection).not.toHaveBeenCalled();
     expect(fixture.popup.showSelectionInMain).not.toHaveBeenCalled();
+    // 選択を読めなかったときは、クリップボードではなく手入力欄を出す。
+    expect(fixture.popup.showError).not.toHaveBeenCalled();
     if (compact) {
-      expect(fixture.popup.showError).toHaveBeenCalledWith(
-        expect.any(String),
-        '選択を取得できませんでした。',
-        undefined,
-        'popup.selectionError',
-      );
-      expect(fixture.popup.showErrorInMain).not.toHaveBeenCalled();
+      expect(fixture.popup.showManual).toHaveBeenCalledWith(expect.any(String), null);
+      expect(fixture.popup.showManualInMain).not.toHaveBeenCalled();
     } else {
-      expect(fixture.popup.showError).not.toHaveBeenCalled();
-      expect(fixture.popup.showErrorInMain).toHaveBeenCalledWith(
-        expect.any(String),
-        '選択を取得できませんでした。',
-      );
+      expect(fixture.popup.showManual).not.toHaveBeenCalled();
+      expect(fixture.popup.showManualInMain).toHaveBeenCalledWith(expect.any(String));
     }
   });
 
@@ -98,7 +93,7 @@ describe('selection failure does not translate stale clipboard text', () => {
     await fixture.controller.triggerSelection();
     expect(fixture.clipboard.readText).not.toHaveBeenCalled();
     expect(fixture.translate).not.toHaveBeenCalled();
-    expect(fixture.popup.showError).toHaveBeenCalledOnce();
+    expect(fixture.popup.showManual).toHaveBeenCalledOnce();
   });
 
   it('still reads the clipboard when explicitly requested', async () => {

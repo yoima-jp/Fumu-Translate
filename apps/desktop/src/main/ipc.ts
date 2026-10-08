@@ -196,6 +196,10 @@ export function registerIpcHandlers(
     mainOnly(event);
     controller.cancelImageTextExtraction();
   });
+  ipcMain.handle(IPC_CHANNELS.appCaptureScreenRegion, (event) => {
+    mainOnly(event);
+    return controller.captureScreenRegionForMain();
+  });
   ipcMain.handle(IPC_CHANNELS.screenCaptureComplete, (event, input: unknown) => {
     assertTrustedSender(event, ['screen-capture']);
     screenRegionCapture.complete(event.sender, screenCaptureSelectionSchema.parse(input));
@@ -392,6 +396,7 @@ export function registerIpcHandlers(
     ipcMain.removeHandler(IPC_CHANNELS.appDownloadUpdate);
     ipcMain.removeHandler(IPC_CHANNELS.appExtractImageText);
     ipcMain.removeHandler(IPC_CHANNELS.appCancelImageTextExtraction);
+    ipcMain.removeHandler(IPC_CHANNELS.appCaptureScreenRegion);
     ipcMain.removeHandler(IPC_CHANNELS.screenCaptureComplete);
     ipcMain.removeHandler(IPC_CHANNELS.screenCaptureRetryWithModel);
     ipcMain.removeHandler(IPC_CHANNELS.appGetStatus);

@@ -9,6 +9,7 @@ export const IPC_CHANNELS = {
   appOpenLanguageSettings: 'app:open-language-settings',
   appExtractImageText: 'app:extract-image-text',
   appCancelImageTextExtraction: 'app:cancel-image-text-extraction',
+  appCaptureScreenRegion: 'app:capture-screen-region',
   screenCaptureComplete: 'screen-capture:complete',
   screenCaptureRetryWithModel: 'screen-capture:retry-with-model',
   popupStateChanged: 'popup:state-changed',

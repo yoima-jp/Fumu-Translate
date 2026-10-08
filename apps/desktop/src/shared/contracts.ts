@@ -168,7 +168,8 @@ export type PopupViewState =
       readonly requestId: string;
       readonly message: string;
       readonly messageKey?: PopupErrorMessageKey;
-      readonly action?: 'open-clipboard' | 'retry-image-with-model';
+      /** enter-textは同じPopup内で手入力欄へ切り替える。 */
+      readonly action?: 'enter-text' | 'retry-image-with-model';
     };
 
 export type HotkeyRegistrationState = 'registered' | 'conflict' | 'invalid' | 'disabled';
@@ -271,6 +272,8 @@ export interface FumuDesktopApi {
   cancelImageTextExtraction(): Promise<void>;
   /** スクリーンショット範囲選択overlayから、選択範囲（nullは取消）を返す。 */
   completeScreenCapture(selection: ScreenCaptureSelection | null): Promise<void>;
+  /** メイン画面を隠して範囲を撮影し、画像を返す。取消・失敗はnull。 */
+  captureScreenRegionForMain(): Promise<ImageInputPayload | null>;
   /** 端末OCRで読めなかった直前のスクリーンショットを、明示操作でAIモデルへ送る。 */
   retryScreenCaptureWithModel(): Promise<void>;
   updateGeneralSettings(update: GeneralSettingsUpdate): Promise<SettingsSnapshot>;

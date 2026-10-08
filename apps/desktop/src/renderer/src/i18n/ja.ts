@@ -31,7 +31,7 @@ export const jaMessages: Readonly<Record<MessageKey, string>> = {
   'popup.selectionTooLarge': '選択範囲が長すぎます。範囲を短くしてください。',
   'popup.imageReadError': '画像を読み取れませんでした。',
   'popup.screenReadError': '画面を読み取れませんでした。',
-  'popup.openClipboard': 'クリップボードから開く',
+  'popup.enterText': 'テキストを入力',
   'result.adjust': '調整',
   'result.adjustAria': '翻訳を調整',
   'result.readAloud': '読み上げ',

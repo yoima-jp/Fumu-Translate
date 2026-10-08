@@ -102,10 +102,11 @@ export interface PopupWindowPort {
   showFollowUpStarted(requestId: string, question: string): void;
   showFollowUpEvent(event: FollowUpEvent): void;
   showManual(requestId: string, clipboardText: string | null): void;
+  showManualInMain(requestId: string): void;
   showError(
     requestId: string,
     message: string,
-    action?: 'open-clipboard' | 'retry-image-with-model',
+    action?: 'enter-text' | 'retry-image-with-model',
     messageKey?: PopupErrorMessageKey,
   ): void;
   showErrorInMain(requestId: string, message: string): void;
@@ -122,6 +123,7 @@ export interface MainWindowPort {
   sendHistoryChanged(): void;
   show(): void;
   showInactive(): void;
+  hide(): Promise<void>;
   dispose(): void;
 }
 
@@ -413,24 +415,28 @@ export class AppController {
         return;
       }
 
-      const message =
-        error instanceof SelectionTextTooLargeError
-          ? '選択範囲が長すぎます。範囲を短くしてください。'
-          : '選択を取得できませんでした。';
       this.#logger.warn('Selection request failed', {
         errorName: error instanceof Error ? error.name : 'UnknownError',
       });
       this.#clearActiveSession();
-      if (surface === 'popup') {
+      if (surface === 'main') {
+        // メイン画面では入力欄そのものが翻訳の入口なので、エラー文を挟まず入力欄へ案内する。
+        // 選択取得は終わっているため、ここで初めてフォーカスを奪ってよい。
+        this.#popup.showManualInMain(requestId);
+        this.#mainWindow.show();
+      } else if (error instanceof SelectionTextTooLargeError) {
+        // 長すぎる選択は入力欄を出しても同じ文を貼れないため、理由を先に伝える。
         this.#popup.showError(
           requestId,
-          message,
+          '選択範囲が長すぎます。範囲を短くしてください。',
           undefined,
-          error instanceof SelectionTextTooLargeError
-            ? 'popup.selectionTooLarge'
-            : 'popup.selectionError',
+          'popup.selectionTooLarge',
         );
-      } else this.#popup.showErrorInMain(requestId, message);
+      } else {
+        // 選択を読めない状況（画像・独自描画のアプリなど）でも、その場で翻訳を続けられるよう
+        // 入力欄を直接出す。クリップボードを自動で使うと無関係な過去の文を翻訳してしまう。
+        this.#popup.showManual(requestId, null);
+      }
       this.#publishStatus();
     }
   }
@@ -511,13 +517,37 @@ export class AppController {
     });
   }
 
+  /**
+   * メイン画面のボタンから範囲を選んで撮影し、画像だけを返す。読み取りと翻訳は
+   * 貼り付け画像と同じRendererの画像翻訳フローに任せ、メイン画面の中で結果を出す。
+   * 取消・撮影失敗はnullを返す。
+   */
+  async captureScreenRegionForMain(): Promise<ImageInputPayload | null> {
+    if (this.#disposed || this.#screenshotFlowActive || this.#screenRegionCapture === null) {
+      return null;
+    }
+    this.#screenshotFlowActive = true;
+    try {
+      // 自分のウィンドウが撮影範囲を隠さないよう、overlayを出す前にメイン画面を隠す。
+      await this.#mainWindow.hide();
+      const capture = await this.#screenRegionCapture.capture();
+      if (capture === null) return null;
+      return { mediaType: 'image/png', data: new Uint8Array(capture.png) };
+    } catch (error) {
+      this.#logger.warn('Main window screen capture failed', {
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+      });
+      return null;
+    } finally {
+      this.#screenshotFlowActive = false;
+      // 取消でも撮影前の画面へ戻す。
+      if (!this.#disposed) this.#mainWindow.show();
+    }
+  }
+
   async retryScreenCaptureWithModel(): Promise<void> {
     const pending = this.#pendingScreenshotModelRetry;
-    if (
-      pending === null ||
-      this.#screenshotFlowActive ||
-      !this.#isCurrent(pending.requestEpoch)
-    ) {
+    if (pending === null || this.#screenshotFlowActive || !this.#isCurrent(pending.requestEpoch)) {
       return;
     }
     this.#pendingScreenshotModelRetry = null;

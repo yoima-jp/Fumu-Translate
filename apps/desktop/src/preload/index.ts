@@ -70,6 +70,7 @@ const api: FumuDesktopApi = {
   cancelImageTextExtraction: () => ipcRenderer.invoke(IPC_CHANNELS.appCancelImageTextExtraction),
   completeScreenCapture: (selection: ScreenCaptureSelection | null) =>
     ipcRenderer.invoke(IPC_CHANNELS.screenCaptureComplete, selection),
+  captureScreenRegionForMain: () => ipcRenderer.invoke(IPC_CHANNELS.appCaptureScreenRegion),
   retryScreenCaptureWithModel: () => ipcRenderer.invoke(IPC_CHANNELS.screenCaptureRetryWithModel),
   updateGeneralSettings: (update: GeneralSettingsUpdate) =>
     ipcRenderer.invoke(IPC_CHANNELS.settingsUpdateGeneral, update),

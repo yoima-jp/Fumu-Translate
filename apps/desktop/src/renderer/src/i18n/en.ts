@@ -29,7 +29,7 @@ export const enMessages = {
   'popup.selectionTooLarge': 'The selected text is too long. Select a shorter passage.',
   'popup.imageReadError': 'Could not read the image.',
   'popup.screenReadError': 'Could not read the selected screen area.',
-  'popup.openClipboard': 'Open from Clipboard',
+  'popup.enterText': 'Enter Text',
   'result.adjust': 'Adjust',
   'result.adjustAria': 'Adjust translation',
   'result.readAloud': 'Read aloud',
