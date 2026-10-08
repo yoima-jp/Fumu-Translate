@@ -43,7 +43,7 @@ import thirdPartyNotices from '../../../../../../THIRD_PARTY_NOTICES.md?raw';
 
 interface SoftSelectOption<T extends string> {
   readonly value: T;
-  readonly label: string;
+  readonly label: React.ReactNode;
 }
 
 export function SoftSelect<T extends string>({
@@ -54,14 +54,16 @@ export function SoftSelect<T extends string>({
   fullWidth = false,
   selectedPrefix = '',
   selectedLabel,
+  menuPlacement = 'below',
 }: {
   readonly value: T;
   readonly options: readonly SoftSelectOption<T>[];
   readonly onChange: (value: T) => void;
   readonly label: string;
   readonly fullWidth?: boolean;
-  readonly selectedPrefix?: string;
-  readonly selectedLabel?: string;
+  readonly selectedPrefix?: React.ReactNode;
+  readonly selectedLabel?: React.ReactNode;
+  readonly menuPlacement?: 'below' | 'right';
 }): React.JSX.Element {
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState({ top: 0, left: 0, width: 170 });
@@ -120,13 +122,22 @@ export function SoftSelect<T extends string>({
     const menuHeight = Math.min(options.length * 42 + 12, 300);
     const below = rect.bottom + 7;
     const top =
-      below + menuHeight <= window.innerHeight - padding
-        ? below
-        : Math.max(padding, rect.top - menuHeight - 7);
-    const left = Math.min(
-      window.innerWidth - width - padding,
-      Math.max(padding, rect.right - width),
-    );
+      menuPlacement === 'right'
+        ? Math.max(padding, Math.min(rect.top, window.innerHeight - menuHeight - padding))
+        : below + menuHeight <= window.innerHeight - padding
+          ? below
+          : Math.max(padding, rect.top - menuHeight - 7);
+    const rightSide = rect.right + 7;
+    const left =
+      menuPlacement === 'right'
+        ? Math.max(
+            padding,
+            Math.min(
+              rightSide + width <= window.innerWidth - padding ? rightSide : rect.left - width - 7,
+              window.innerWidth - width - padding,
+            ),
+          )
+        : Math.min(window.innerWidth - width - padding, Math.max(padding, rect.right - width));
     setPosition({ top, left, width });
     setOpen(true);
   };

@@ -1,19 +1,18 @@
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowUp,
-  ChevronRight,
+  ArrowLeftRight,
   History as HistoryIcon,
   Image as ImageIcon,
   MessagesSquare,
   PenLine,
   ScanText,
   Settings as SettingsIcon,
-  SlidersHorizontal,
+  X,
 } from 'lucide-react';
 import { MAX_TRANSLATION_SOURCE_CODE_POINTS } from '@fumu/translation-core';
 import type { DesktopStatus, ImageInputPayload, PopupViewState } from '../../../shared/contracts';
 import type { HistoryDetail, HistoryListItem } from '../../../shared/history-contracts';
-import type { GeneralSettingsUpdate } from '../../../shared/settings-contracts';
 import {
   DEFAULT_TRANSLATE_SHORTCUT,
   FIXED_ADJUSTMENT_STYLE_IDS,
@@ -22,7 +21,6 @@ import {
   NATIVE_LANGUAGE_OPTIONS,
   type NativeLanguage,
   type SettingsSnapshot,
-  type TranslationStyle,
   type WritingStyle,
 } from '../../../shared/settings-contracts';
 import { TranslationResultPanel as SharedTranslationResultPanel } from '../TranslationResultPanel';
@@ -43,6 +41,7 @@ import { shouldOpenExternalTranslation } from './external-translation-state';
 import { displayAccelerator } from './shortcut-display';
 import { ConversationTranslationFlow, ConversationTurnResult } from './ConversationTranslationFlow';
 import { AnotherTextBar, type AnotherTextSubmission } from './AnotherTextBar';
+import { QuickSettingsControl } from './QuickSettingsControl';
 import {
   completedConversationResult,
   conversationContextForTurns,
@@ -77,6 +76,8 @@ const MAX_IMAGE_INPUT_BYTES = 20 * 1024 * 1024;
 const DEFAULT_SIDEBAR_WIDTH = 276;
 const MIN_SIDEBAR_WIDTH = 200;
 const MAX_SIDEBAR_WIDTH = 420;
+// 全件を一度に読み込まず、履歴モーダルから必要な分だけ追加取得する。
+const HISTORY_PAGE_SIZE = 30;
 // 表示上の好みだけを保持し、同期対象になるアプリ設定スキーマには含めない。
 const SIDEBAR_WIDTH_STORAGE_KEY = 'fumu.main.sidebarWidth';
 
@@ -169,7 +170,7 @@ function useRecentHistory(): readonly HistoryListItem[] {
     let active = true;
     const load = (): void => {
       void window.fumu
-        .listHistory({ query: '', limit: 30 })
+        .listHistory({ query: '', limit: HISTORY_PAGE_SIZE })
         .then((value) => {
           if (active) setItems(value);
         })
@@ -191,6 +192,43 @@ function useMainTranslation(): PopupViewState {
   return state;
 }
 
+const TARGET_LANGUAGE_FLAGS: Record<NativeLanguage, string> = {
+  Japanese: '🇯🇵',
+  English: '🇺🇸',
+  Korean: '🇰🇷',
+  'Chinese (Simplified)': '🇨🇳',
+  'Chinese (Traditional)': '🇹🇼',
+  Spanish: '🇪🇸',
+  French: '🇫🇷',
+  German: '🇩🇪',
+  Arabic: '🇸🇦',
+  Bengali: '🇧🇩',
+  Czech: '🇨🇿',
+  Danish: '🇩🇰',
+  Dutch: '🇳🇱',
+  Finnish: '🇫🇮',
+  Greek: '🇬🇷',
+  Hebrew: '🇮🇱',
+  Hindi: '🇮🇳',
+  Hungarian: '🇭🇺',
+  Indonesian: '🇮🇩',
+  Italian: '🇮🇹',
+  Malay: '🇲🇾',
+  Norwegian: '🇳🇴',
+  Persian: '🇮🇷',
+  Polish: '🇵🇱',
+  'Portuguese (Brazil)': '🇧🇷',
+  'Portuguese (Portugal)': '🇵🇹',
+  Romanian: '🇷🇴',
+  Russian: '🇷🇺',
+  Swedish: '🇸🇪',
+  Thai: '🇹🇭',
+  Turkish: '🇹🇷',
+  Ukrainian: '🇺🇦',
+  Urdu: '🇵🇰',
+  Vietnamese: '🇻🇳',
+};
+
 function TargetLanguageSelect({
   value,
   onChange,
@@ -207,23 +245,36 @@ function TargetLanguageSelect({
     () =>
       NATIVE_LANGUAGE_OPTIONS.map((option) => ({
         value: option.value,
-        label: formatLanguageName(option.value),
+        label: (
+          <>
+            <span className="language-option-flag" aria-hidden="true">
+              {TARGET_LANGUAGE_FLAGS[option.value]}
+            </span>
+            <span>{formatLanguageName(option.value)}</span>
+          </>
+        ),
       })),
     [formatLanguageName],
   );
-  const selectedShortLanguage = compact
-    ? NATIVE_LANGUAGE_OPTIONS.find((option) => option.value === value)
-        ?.tag.split('-')[0]
-        ?.toUpperCase()
-    : undefined;
+  const selectedLabel = compact ? (
+    <span aria-hidden="true">{TARGET_LANGUAGE_FLAGS[value]}</span>
+  ) : (
+    <>
+      <span className="language-chip-flag" aria-hidden="true">
+        {TARGET_LANGUAGE_FLAGS[value]}
+      </span>
+      <span className="language-chip-name">{formatLanguageName(value)}</span>
+    </>
+  );
   return (
     <div className={className}>
       <SoftSelect
         label={t('main.targetLanguage')}
         value={value}
         options={targetLanguageOptions}
-        {...(selectedShortLanguage === undefined ? {} : { selectedLabel: selectedShortLanguage })}
-        selectedPrefix={compact ? '' : '⇄ '}
+        selectedLabel={selectedLabel}
+        selectedPrefix={<ArrowLeftRight size={14} aria-hidden="true" />}
+        menuPlacement={compact ? 'right' : 'below'}
         onChange={onChange}
       />
     </div>
@@ -233,9 +284,11 @@ function TargetLanguageSelect({
 function ScreenCaptureButton({
   disabled,
   onClick,
+  showTooltip = false,
 }: {
   readonly disabled: boolean;
   readonly onClick: () => void;
+  readonly showTooltip?: boolean;
 }): React.JSX.Element {
   const { t } = useI18n();
   return (
@@ -243,7 +296,7 @@ function ScreenCaptureButton({
       className="sidebar-capture"
       type="button"
       aria-label={t('main.translateScreen')}
-      title={t('main.translateScreen')}
+      title={showTooltip ? undefined : t('main.translateScreen')}
       disabled={disabled}
       onClick={onClick}
     >
@@ -261,6 +314,7 @@ function MiniRail({
   onHome,
   onCapture,
   capturePending,
+  captureShortcut,
   onHistorySelect,
   onShowAllHistory,
   allHistoryButtonRef,
@@ -275,6 +329,7 @@ function MiniRail({
   readonly onHome: () => void;
   readonly onCapture: () => void;
   readonly capturePending: boolean;
+  readonly captureShortcut?: string;
   readonly onHistorySelect: (id: string) => void;
   readonly onShowAllHistory: () => void;
   readonly allHistoryButtonRef: React.RefObject<HTMLButtonElement | null>;
@@ -307,207 +362,115 @@ function MiniRail({
 
   return (
     <div ref={railRef} className="mini-rail" inert={inert}>
-      {showTargetLanguage && (
-        <TargetLanguageSelect
-          className="mini-rail-language"
-          compact
-          value={targetLanguage}
-          onChange={onTargetLanguageChange}
-        />
-      )}
-      <button
-        className="mini-rail-button"
-        type="button"
-        aria-label={t('main.newTranslation')}
-        title={t('main.newTranslation')}
-        onClick={onHome}
-      >
-        <PenLine size={19} aria-hidden="true" />
-      </button>
-      <ScreenCaptureButton disabled={capturePending} onClick={onCapture} />
-      <div className="mini-rail-history" data-open={historyOpen || undefined}>
-        <button
-          ref={(element) => {
-            historyButtonRef.current = element;
-            allHistoryButtonRef.current = element;
-          }}
-          className="mini-rail-button"
-          type="button"
-          aria-label={t('main.history')}
-          title={t('main.history')}
-          aria-haspopup="dialog"
-          aria-expanded={historyOpen}
-          onClick={() => setHistoryOpen((current) => !current)}
-        >
-          <HistoryIcon size={19} aria-hidden="true" />
-        </button>
-        {historyOpen && (
-          <div className="mini-rail-history-popover" role="dialog" aria-label={t('main.history')}>
-            <div className="mini-rail-history-items">
-              {historyItems.slice(0, 6).map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  className={selectedHistoryId === item.id ? 'selected' : undefined}
-                  aria-current={selectedHistoryId === item.id ? 'page' : undefined}
-                  title={item.sourceText}
-                  onClick={() => {
-                    setHistoryOpen(false);
-                    onHistorySelect(item.id);
-                  }}
-                >
-                  {item.sourceText}
-                </button>
-              ))}
-              {historyItems.length === 0 && <p>{t('history.empty')}</p>}
-            </div>
-            <button
-              className="mini-rail-show-all"
-              type="button"
-              onClick={() => {
-                setHistoryOpen(false);
-                onShowAllHistory();
-              }}
-            >
-              {t('main.showAllHistory')}
-            </button>
+      <div className="mini-rail-primary">
+        {showTargetLanguage && (
+          <div className="mini-rail-tool">
+            <TargetLanguageSelect
+              className="mini-rail-language"
+              compact
+              value={targetLanguage}
+              onChange={onTargetLanguageChange}
+            />
+            <MiniRailTooltip label={t('main.translateLanguage')} />
           </div>
         )}
+        <div className="mini-rail-tool">
+          <button
+            className="mini-rail-button"
+            type="button"
+            aria-label={t('main.newTranslation')}
+            onClick={onHome}
+          >
+            <PenLine size={19} aria-hidden="true" />
+          </button>
+          <MiniRailTooltip label={t('main.newTranslation')} />
+        </div>
+        <div className="mini-rail-tool">
+          <ScreenCaptureButton disabled={capturePending} onClick={onCapture} showTooltip />
+          <MiniRailTooltip
+            label={t('main.translateScreen')}
+            {...(captureShortcut === undefined ? {} : { shortcut: captureShortcut })}
+          />
+        </div>
+        <div className="mini-rail-history mini-rail-tool" data-open={historyOpen || undefined}>
+          <button
+            ref={(element) => {
+              historyButtonRef.current = element;
+              allHistoryButtonRef.current = element;
+            }}
+            className="mini-rail-button"
+            type="button"
+            aria-label={t('main.history')}
+            aria-haspopup="dialog"
+            aria-expanded={historyOpen}
+            onClick={() => setHistoryOpen((current) => !current)}
+          >
+            <HistoryIcon size={19} aria-hidden="true" />
+          </button>
+          <MiniRailTooltip label={t('main.history')} />
+          {historyOpen && (
+            <div className="mini-rail-history-popover" role="dialog" aria-label={t('main.history')}>
+              <div className="mini-rail-history-items">
+                {historyItems.slice(0, 6).map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className={selectedHistoryId === item.id ? 'selected' : undefined}
+                    aria-current={selectedHistoryId === item.id ? 'page' : undefined}
+                    title={item.sourceText}
+                    onClick={() => {
+                      setHistoryOpen(false);
+                      onHistorySelect(item.id);
+                    }}
+                  >
+                    {item.sourceText}
+                  </button>
+                ))}
+                {historyItems.length === 0 && <p>{t('history.empty')}</p>}
+              </div>
+              <button
+                className="mini-rail-show-all"
+                type="button"
+                onClick={() => {
+                  setHistoryOpen(false);
+                  onShowAllHistory();
+                }}
+              >
+                {t('main.showAllHistory')}
+              </button>
+            </div>
+          )}
+        </div>
       </div>
       <div className="mini-rail-footer">
-        <button
-          className="sidebar-settings"
-          type="button"
-          aria-label={t('main.openSettings')}
-          title={t('main.openSettings')}
-          onClick={onOpenSettings}
-        >
-          <SettingsIcon size={19} aria-hidden="true" />
-        </button>
+        <div className="mini-rail-tool">
+          <button
+            className="sidebar-settings"
+            type="button"
+            aria-label={t('main.openSettings')}
+            onClick={onOpenSettings}
+          >
+            <SettingsIcon size={19} aria-hidden="true" />
+          </button>
+          <MiniRailTooltip label={t('main.openSettings')} />
+        </div>
       </div>
     </div>
   );
 }
 
-function enabledModelOptions(settings: SettingsSnapshot) {
-  return settings.providers.flatMap((provider) =>
-    provider.enabledModelIds.map((modelId) => ({
-      value: `${provider.id}\u0000${modelId}`,
-      label: `${provider.name} · ${modelId}`,
-      providerId: provider.id,
-      modelId,
-    })),
-  );
-}
-
-function QuickSettingsPanel({
-  settings,
-  id,
-  closing,
-  onOpenSettings,
-  onClose,
+function MiniRailTooltip({
+  label,
+  shortcut,
 }: {
-  readonly settings: SettingsSnapshot;
-  readonly id: string;
-  readonly closing: boolean;
-  readonly onOpenSettings: () => void;
-  readonly onClose: () => void;
+  readonly label: string;
+  readonly shortcut?: string;
 }): React.JSX.Element {
-  const { t } = useI18n();
-  const [error, setError] = useState<string | null>(null);
-  const currentModel = settings.usedModels[0];
-  const modelOptions = enabledModelOptions(settings);
-  // 「未設定」は解除操作ではなく、実際に使用モデルがない場合の状態表示だけに使う。
-  const displayedModelOptions =
-    currentModel === undefined
-      ? [{ value: '', label: t('common.notConfigured') }, ...modelOptions]
-      : modelOptions;
-  const update = (patch: GeneralSettingsUpdate): void => {
-    void window.fumu
-      .updateGeneralSettings(patch)
-      .then(() => setError(null))
-      .catch(() => setError(t('common.settingsSaveError')));
-  };
-
   return (
-    <div
-      id={id}
-      className={closing ? 'quick-settings-panel closing' : 'quick-settings-panel'}
-      role="dialog"
-      aria-label={t('quick.title')}
-    >
-      <div className="quick-settings-row">
-        <strong>{t('quick.aiModel')}</strong>
-        <SoftSelect<string>
-          label={t('quick.aiModel')}
-          value={
-            currentModel === undefined
-              ? ''
-              : `${currentModel.providerId}\u0000${currentModel.modelId}`
-          }
-          options={displayedModelOptions}
-          onChange={(value) => {
-            const selected = modelOptions.find((option) => option.value === value);
-            const models =
-              selected === undefined
-                ? []
-                : [
-                    { providerId: selected.providerId, modelId: selected.modelId },
-                    ...settings.usedModels.filter(
-                      (model) =>
-                        model.providerId !== selected.providerId ||
-                        model.modelId !== selected.modelId,
-                    ),
-                  ];
-            void window.fumu
-              .updateUsedModels({ models })
-              .then(() => setError(null))
-              .catch(() => setError(t('quick.modelChangeError')));
-          }}
-        />
-      </div>
-      <div className="quick-settings-row">
-        <strong>{t('quick.translationStyle')}</strong>
-        <SoftSelect<TranslationStyle>
-          label={t('quick.translationStyle')}
-          value={settings.translationStyle}
-          options={[
-            { value: 'literal', label: t('quick.literal') },
-            { value: 'natural', label: t('quick.natural') },
-          ]}
-          onChange={(translationStyle) => update({ translationStyle })}
-        />
-      </div>
-      <label className="quick-settings-toggle">
-        <span>
-          <strong>{t('quick.enterToSend')}</strong>
-          <small>{t('quick.shiftEnter')}</small>
-        </span>
-        <input
-          type="checkbox"
-          checked={settings.enterToSend}
-          aria-label={t('quick.enterToSend')}
-          onChange={(event) => update({ enterToSend: event.currentTarget.checked })}
-        />
-        <span className="quick-settings-switch" aria-hidden="true" />
-      </label>
-      {error && (
-        <p className="quick-settings-error" role="alert">
-          {error}
-        </p>
-      )}
-      <button
-        className="quick-settings-more"
-        type="button"
-        onClick={() => {
-          onClose();
-          onOpenSettings();
-        }}
-      >
-        {t('quick.more')}
-        <ChevronRight size={16} aria-hidden="true" />
-      </button>
-    </div>
+    <span className="mini-rail-tooltip" aria-hidden="true">
+      <span>{label}</span>
+      {shortcut !== undefined && <kbd>{shortcut}</kbd>}
+    </span>
   );
 }
 
@@ -617,11 +580,6 @@ function Composer({
     readonly url: string;
     readonly sourceTexts: readonly string[];
   } | null>(null);
-  const [quickSettingsOpen, setQuickSettingsOpen] = useState(false);
-  const [quickSettingsRendered, setQuickSettingsRendered] = useState(false);
-  const quickSettingsRef = useRef<HTMLDivElement>(null);
-  const quickSettingsButtonRef = useRef<HTMLButtonElement>(null);
-  const quickSettingsCloseTimerRef = useRef<number | null>(null);
   const styleAdjustCloseTimerRef = useRef<number | null>(null);
   const submittingRef = useRef(false);
   const submissionEpochRef = useRef(0);
@@ -631,7 +589,6 @@ function Composer({
   const resultImageUrlRef = useRef<string | null>(null);
   const imageExtractionActiveRef = useRef(false);
   const imageFileInputRef = useRef<HTMLInputElement>(null);
-  const quickSettingsId = useId();
   const conversationReady =
     mode !== 'conversation' ||
     conversationDirection === 'outgoing' ||
@@ -671,6 +628,7 @@ function Composer({
     readonly inlineContexts?: readonly string[];
     readonly writingStyleIds?: readonly string[];
     readonly forceText?: boolean;
+    readonly fromImageOcr?: boolean;
   }): Promise<boolean> => {
     const value = (submission?.text ?? text).trim();
     const submittedMode = submission?.forceText === true ? 'text' : mode;
@@ -684,7 +642,7 @@ function Composer({
       // 画像の読み取り中に手動で翻訳を始めると、読み取り完了時の翻訳開始と競合して
       // 書き起こし文が入力欄ごと隠れてしまう。読み取り完了側の送信だけを通す。
       imageExtractionActiveRef.current ||
-      imageStage?.phase === 'reading' ||
+      (imageStage?.phase === 'reading' && submission?.fromImageOcr !== true) ||
       !value ||
       !status.translationConfigured ||
       !submittedConversationReady
@@ -877,8 +835,13 @@ function Composer({
             imageExtractionActiveRef.current = false;
             keepImageStage = true;
             setImageStage({ previewUrl, phase: 'translating', text: sourceText });
-            // 文脈・文体・翻訳中状態を既存の翻訳開始処理と共有する。
-            submitRef.current({ text: sourceText });
+            // setImageStageはこの呼び出し元のレンダーには反映されないため、OCR送信だけ読み取り中のガードを通す。
+            const started = await submitRef.current({ text: sourceText, fromImageOcr: true });
+            if (!started && requestId === imageRequestIdRef.current) {
+              // モデル未設定やIPC失敗時だけ書き起こしを編集可能な入力欄へ戻す。
+              editorRef.current?.appendText(sourceText);
+              clearImageStage();
+            }
             break;
           }
           case 'no-text':
@@ -957,10 +920,6 @@ function Composer({
       imagePreviewUrlRef.current = null;
       setResultImage({ url: imageStage.previewUrl, sourceTexts: [imageStage.text] });
       setImageStage(null);
-    } else if (!submitting) {
-      // 翻訳を開始できなかった場合（モデル未設定など）は、書き起こし文の入った入力欄へ戻す。
-      editorRef.current?.appendText(imageStage.text);
-      clearImageStage();
     }
   }, [imageStage, drafting, submitting]);
   useEffect(() => {
@@ -1060,64 +1019,14 @@ function Composer({
     setStyleAdjustRendered(true);
     setStyleAdjustEnabled(true);
   };
-  const closeQuickSettings = (): void => {
-    if (quickSettingsCloseTimerRef.current !== null) {
-      window.clearTimeout(quickSettingsCloseTimerRef.current);
-    }
-    setQuickSettingsOpen(false);
-    quickSettingsCloseTimerRef.current = window.setTimeout(() => {
-      setQuickSettingsRendered(false);
-      quickSettingsCloseTimerRef.current = null;
-    }, 140);
-  };
-  const showQuickSettings = (): void => {
-    if (quickSettingsCloseTimerRef.current !== null) {
-      window.clearTimeout(quickSettingsCloseTimerRef.current);
-      quickSettingsCloseTimerRef.current = null;
-    }
-    setQuickSettingsRendered(true);
-    setQuickSettingsOpen(true);
-  };
   useEffect(
     () => () => {
-      if (quickSettingsCloseTimerRef.current !== null) {
-        window.clearTimeout(quickSettingsCloseTimerRef.current);
-      }
       if (styleAdjustCloseTimerRef.current !== null) {
         window.clearTimeout(styleAdjustCloseTimerRef.current);
       }
     },
     [],
   );
-  useEffect(() => {
-    if (!quickSettingsRendered) return;
-    const closeOutside = (event: MouseEvent): void => {
-      if (!(event.target instanceof Node)) return;
-      const target = event.target;
-      // SoftSelect renders its listbox into body so it can escape clipped
-      // containers. Treat that portaled listbox as part of this panel while
-      // an option is being selected.
-      if (
-        quickSettingsRef.current?.contains(target) ||
-        (target instanceof Element && target.closest('.soft-select-menu') !== null)
-      ) {
-        return;
-      }
-      closeQuickSettings();
-    };
-    const closeOnEscape = (event: KeyboardEvent): void => {
-      if (event.defaultPrevented || event.key !== 'Escape') return;
-      event.preventDefault();
-      closeQuickSettings();
-      window.requestAnimationFrame(() => quickSettingsButtonRef.current?.focus());
-    };
-    document.addEventListener('mousedown', closeOutside);
-    document.addEventListener('keydown', closeOnEscape);
-    return () => {
-      document.removeEventListener('mousedown', closeOutside);
-      document.removeEventListener('keydown', closeOnEscape);
-    };
-  }, [quickSettingsRendered]);
   const activeConversationTurn =
     activeConversationSubmission !== null
       ? {
@@ -1162,6 +1071,7 @@ function Composer({
             busy={submitting || imageStage?.phase === 'reading'}
             onSubmit={(value) => submit({ ...value, forceText: true })}
             onImageFile={readImageFromAnotherTextBar}
+            openSettings={openSettings}
             openWritingStyles={openWritingStyles}
           />
         </div>
@@ -1177,6 +1087,7 @@ function Composer({
                   busy={submitting || imageStage?.phase === 'reading'}
                   onSubmit={(value) => submit({ ...value, forceText: true })}
                   onImageFile={readImageFromAnotherTextBar}
+                  openSettings={openSettings}
                   openWritingStyles={openWritingStyles}
                 />
               </div>
@@ -1432,39 +1343,7 @@ function Composer({
                 onSubmit={submit}
               />
               <footer>
-                <div className="quick-settings-anchor" ref={quickSettingsRef}>
-                  <button
-                    ref={quickSettingsButtonRef}
-                    className="nani-icon-button"
-                    type="button"
-                    aria-label={t('quick.title')}
-                    aria-haspopup="dialog"
-                    aria-controls={quickSettingsRendered ? quickSettingsId : undefined}
-                    aria-expanded={quickSettingsOpen}
-                    onClick={() => {
-                      if (settings === null) {
-                        openSettings();
-                        return;
-                      }
-                      if (quickSettingsOpen) {
-                        closeQuickSettings();
-                      } else {
-                        showQuickSettings();
-                      }
-                    }}
-                  >
-                    <SlidersHorizontal size={19} />
-                  </button>
-                  {quickSettingsRendered && settings && (
-                    <QuickSettingsPanel
-                      settings={settings}
-                      id={quickSettingsId}
-                      closing={!quickSettingsOpen}
-                      onOpenSettings={openSettings}
-                      onClose={closeQuickSettings}
-                    />
-                  )}
-                </div>
+                <QuickSettingsControl settings={settings} openSettings={openSettings} />
                 <div>
                   <button
                     className="translate-button"
@@ -1607,6 +1486,7 @@ function HistoryTranslationResult({
   translationConfigured,
   onSubmit,
   onImageFile,
+  openSettings,
   openWritingStyles,
 }: {
   readonly detail: HistoryDetail;
@@ -1615,6 +1495,7 @@ function HistoryTranslationResult({
   readonly translationConfigured: boolean;
   readonly onSubmit: (submission: AnotherTextSubmission) => Promise<boolean>;
   readonly onImageFile: (file: File) => void;
+  readonly openSettings: () => void;
   readonly openWritingStyles: () => void;
 }) {
   const { t } = useI18n();
@@ -1630,6 +1511,7 @@ function HistoryTranslationResult({
             busy={false}
             onSubmit={onSubmit}
             onImageFile={onImageFile}
+            openSettings={openSettings}
             openWritingStyles={openWritingStyles}
           />
         </div>
@@ -1667,6 +1549,7 @@ function HistoryTranslationResult({
           busy={false}
           onSubmit={onSubmit}
           onImageFile={onImageFile}
+          openSettings={openSettings}
           openWritingStyles={openWritingStyles}
         />
       </div>
@@ -1726,7 +1609,14 @@ export function MainView(): React.JSX.Element {
   const [imageDragActive, setImageDragActive] = useState(false);
   const [screenCapturePending, setScreenCapturePending] = useState(false);
   const screenCapturePendingRef = useRef(false);
-  const [sidebarDrawerOpen, setSidebarDrawerOpen] = useState(false);
+  const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
+  const [historyDialogItems, setHistoryDialogItems] = useState<readonly HistoryListItem[]>([]);
+  const [historyDialogHasMore, setHistoryDialogHasMore] = useState(false);
+  const [historyDialogLoading, setHistoryDialogLoading] = useState(false);
+  const [historyDialogError, setHistoryDialogError] = useState<string | null>(null);
+  const historyDialogRequestIdRef = useRef(0);
+  const historyDialogLoadingRef = useRef(false);
+  const closeHistoryDialogRef = useRef<() => void>(() => undefined);
   const [focusInputRequestId, setFocusInputRequestId] = useState<string | null>(null);
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     try {
@@ -1744,8 +1634,8 @@ export function MainView(): React.JSX.Element {
     readonly startX: number;
     readonly startWidth: number;
   } | null>(null);
-  const drawerTriggerRef = useRef<HTMLButtonElement>(null);
-  const sidebarRef = useRef<HTMLElement>(null);
+  const historyDialogTriggerRef = useRef<HTMLButtonElement>(null);
+  const historyDialogRef = useRef<HTMLDivElement>(null);
   const handledManualRequestIdRef = useRef<string | null>(null);
   const modalRef = useRef<HTMLDivElement>(null);
   const logoTargetRef = useRef<HTMLButtonElement>(null);
@@ -1755,6 +1645,48 @@ export function MainView(): React.JSX.Element {
   const settingsState = useSettings(t('common.settingsLoadError'));
   const recentHistory = useRecentHistory();
   const translationState = useMainTranslation();
+  const loadHistoryDialogPage = (offset: number, requestId: number): void => {
+    if (historyDialogLoadingRef.current) return;
+    historyDialogLoadingRef.current = true;
+    setHistoryDialogLoading(true);
+    setHistoryDialogError(null);
+    void window.fumu
+      .listHistory({ query: '', limit: HISTORY_PAGE_SIZE, offset })
+      .then((items) => {
+        if (requestId !== historyDialogRequestIdRef.current) return;
+        setHistoryDialogItems((current) => (offset === 0 ? items : [...current, ...items]));
+        setHistoryDialogHasMore(items.length === HISTORY_PAGE_SIZE);
+      })
+      .catch(() => {
+        if (requestId === historyDialogRequestIdRef.current) {
+          setHistoryDialogError(t('common.genericError'));
+        }
+      })
+      .finally(() => {
+        if (requestId !== historyDialogRequestIdRef.current) return;
+        historyDialogLoadingRef.current = false;
+        setHistoryDialogLoading(false);
+      });
+  };
+  const openHistoryDialog = (): void => {
+    const requestId = ++historyDialogRequestIdRef.current;
+    historyDialogLoadingRef.current = false;
+    setHistoryDialogItems([]);
+    setHistoryDialogHasMore(false);
+    setHistoryDialogError(null);
+    setHistoryDialogOpen(true);
+    loadHistoryDialogPage(0, requestId);
+  };
+  const closeHistoryDialog = (): void => {
+    historyDialogRequestIdRef.current += 1;
+    historyDialogLoadingRef.current = false;
+    setHistoryDialogLoading(false);
+    setHistoryDialogOpen(false);
+  };
+  closeHistoryDialogRef.current = closeHistoryDialog;
+  const loadMoreHistory = (): void => {
+    loadHistoryDialogPage(historyDialogItems.length, historyDialogRequestIdRef.current);
+  };
   const targetLanguage = targetLanguageOverride ?? displayedTargetLanguage(settingsState.settings);
   const onboardingActive = settingsState.settings?.onboardingCompleted !== true;
   const sidebarLanguageVisible =
@@ -1771,7 +1703,7 @@ export function MainView(): React.JSX.Element {
     setHistoryError(null);
     setInitialConversation(null);
     setComposerRouting({ mode: 'text', direction: 'incoming' });
-    setSidebarDrawerOpen(false);
+    closeHistoryDialog();
     setComposerKey((value) => value + 1);
   };
   // どの画面にいても、画像の貼り付け・ドロップで新しい画像翻訳を始める。
@@ -1816,26 +1748,41 @@ export function MainView(): React.JSX.Element {
     return () => document.body.classList.remove('sidebar-resizing');
   }, [sidebarResizing]);
   useEffect(() => {
-    if (!sidebarDrawerOpen) return;
-    const frame = window.requestAnimationFrame(() => {
-      const firstHistoryItem =
-        sidebarRef.current?.querySelector<HTMLButtonElement>('.history-nav button');
-      (
-        firstHistoryItem ?? sidebarRef.current?.querySelector<HTMLButtonElement>('.new-translation')
-      )?.focus();
-    });
-    const closeOnEscape = (event: KeyboardEvent): void => {
-      if (event.defaultPrevented || event.key !== 'Escape') return;
-      event.preventDefault();
-      setSidebarDrawerOpen(false);
-      window.requestAnimationFrame(() => drawerTriggerRef.current?.focus());
+    if (!historyDialogOpen) return;
+    const dialog = historyDialogRef.current;
+    const focusable = (): HTMLElement[] =>
+      Array.from(
+        dialog?.querySelectorAll<HTMLElement>(
+          'button:not(:disabled), [tabindex]:not([tabindex="-1"])',
+        ) ?? [],
+      );
+    const frame = window.requestAnimationFrame(() => focusable()[0]?.focus());
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if (event.defaultPrevented) return;
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeHistoryDialogRef.current();
+        window.requestAnimationFrame(() => historyDialogTriggerRef.current?.focus());
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const controls = focusable();
+      const first = controls[0];
+      const last = controls.at(-1);
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last?.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first?.focus();
+      }
     };
-    document.addEventListener('keydown', closeOnEscape);
+    document.addEventListener('keydown', handleKeyDown);
     return () => {
       window.cancelAnimationFrame(frame);
-      document.removeEventListener('keydown', closeOnEscape);
+      document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [sidebarDrawerOpen]);
+  }, [historyDialogOpen]);
   useEffect(() => {
     const imageFileFrom = (data: DataTransfer | null): File | null => {
       if (data === null) return null;
@@ -1902,7 +1849,7 @@ export function MainView(): React.JSX.Element {
     setInitialConversation(null);
     setSettingsOpen(false);
     setSettingsRendered(false);
-    setSidebarDrawerOpen(false);
+    closeHistoryDialogRef.current();
   }, [dismissedTranslationRequestId, translationState.phase, translationState.requestId]);
   useEffect(() => {
     // 同じmanual requestの再通知でComposerを作り直さないよう、requestId単位で一度だけ処理する。
@@ -1926,7 +1873,7 @@ export function MainView(): React.JSX.Element {
     setHistoryError(null);
     setInitialConversation(null);
     setComposerRouting({ mode: 'text', direction: 'incoming' });
-    setSidebarDrawerOpen(false);
+    closeHistoryDialogRef.current();
     setFocusInputRequestId(translationState.requestId);
     setComposerKey((value) => value + 1);
   }, [translationState.phase, translationState.requestId]);
@@ -1960,16 +1907,13 @@ export function MainView(): React.JSX.Element {
     };
   }, [page, selectedHistoryId, t]);
   const openSettings = (target: SettingsTarget = 'general'): void => {
-    setSidebarDrawerOpen(false);
+    closeHistoryDialog();
     if (settingsCloseTimerRef.current !== null) {
       window.clearTimeout(settingsCloseTimerRef.current);
       settingsCloseTimerRef.current = null;
     }
-    restoreFocusRef.current = sidebarDrawerOpen
-      ? drawerTriggerRef.current
-      : document.activeElement instanceof HTMLElement
-        ? document.activeElement
-        : null;
+    restoreFocusRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
     setSettingsTarget(target);
     setSettingsRendered(true);
     setSettingsOpen(true);
@@ -2036,9 +1980,8 @@ export function MainView(): React.JSX.Element {
       style={{ '--nani-sidebar-width': `${sidebarWidth}px` } as React.CSSProperties}
     >
       <aside
-        ref={sidebarRef}
-        className={`nani-sidebar${sidebarDrawerOpen ? ' is-drawer-open' : ''}`}
-        inert={settingsRendered || onboardingActive}
+        className="nani-sidebar"
+        inert={settingsRendered || onboardingActive || historyDialogOpen}
       >
         <div className="sidebar-top">
           <button
@@ -2051,10 +1994,6 @@ export function MainView(): React.JSX.Element {
             <IdleMascot disabled={onboardingActive || settingsRendered} />
           </button>
           <div className="sidebar-language-tools">
-            <ScreenCaptureButton
-              disabled={screenCapturePending}
-              onClick={() => void captureScreen()}
-            />
             {sidebarLanguageVisible && (
               <TargetLanguageSelect
                 className="sidebar-language"
@@ -2062,6 +2001,10 @@ export function MainView(): React.JSX.Element {
                 onChange={setTargetLanguageOverride}
               />
             )}
+            <ScreenCaptureButton
+              disabled={screenCapturePending}
+              onClick={() => void captureScreen()}
+            />
           </div>
         </div>
         <button className="new-translation" type="button" onClick={goHome}>
@@ -2077,7 +2020,6 @@ export function MainView(): React.JSX.Element {
               aria-current={selectedHistoryId === item.id ? 'page' : undefined}
               title={item.sourceText}
               onClick={() => {
-                setSidebarDrawerOpen(false);
                 setSelectedHistoryId(item.id);
                 setHistoryDetail(null);
                 setPage('history');
@@ -2149,15 +2091,6 @@ export function MainView(): React.JSX.Element {
           }}
         />
       </aside>
-      {sidebarDrawerOpen && (
-        <div
-          className="sidebar-drawer-backdrop"
-          role="presentation"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) setSidebarDrawerOpen(false);
-          }}
-        />
-      )}
       <MiniRail
         targetLanguage={targetLanguage}
         showTargetLanguage={sidebarLanguageVisible}
@@ -2167,24 +2100,124 @@ export function MainView(): React.JSX.Element {
         onHome={goHome}
         onCapture={() => void captureScreen()}
         capturePending={screenCapturePending}
+        {...(settingsState.settings?.screenshotShortcut == null ||
+        status.screenshotHotkeyState !== 'registered'
+          ? {}
+          : {
+              captureShortcut: displayAccelerator(
+                settingsState.settings.screenshotShortcut,
+                t('common.notConfigured'),
+              ).replaceAll(' + ', ' '),
+            })}
         onHistorySelect={(id) => {
           setSelectedHistoryId(id);
           setHistoryDetail(null);
           setHistoryError(null);
           setPage('history');
         }}
-        onShowAllHistory={() => setSidebarDrawerOpen(true)}
-        allHistoryButtonRef={drawerTriggerRef}
+        onShowAllHistory={openHistoryDialog}
+        allHistoryButtonRef={historyDialogTriggerRef}
         onOpenSettings={() => openSettings()}
-        inert={settingsRendered || onboardingActive}
+        inert={settingsRendered || onboardingActive || historyDialogOpen}
       />
+      {historyDialogOpen && (
+        <div
+          className="history-dialog-overlay"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              closeHistoryDialog();
+              window.requestAnimationFrame(() => historyDialogTriggerRef.current?.focus());
+            }
+          }}
+        >
+          <div
+            ref={historyDialogRef}
+            className="history-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="history-dialog-title"
+          >
+            <header>
+              <h2 id="history-dialog-title">{t('main.historyTitle')}</h2>
+              <button
+                className="history-dialog-close"
+                type="button"
+                aria-label={t('common.close')}
+                title={t('common.close')}
+                onClick={() => {
+                  closeHistoryDialog();
+                  window.requestAnimationFrame(() => historyDialogTriggerRef.current?.focus());
+                }}
+              >
+                <X size={18} aria-hidden="true" />
+              </button>
+            </header>
+            <div className="history-dialog-list">
+              {historyDialogItems.length > 0
+                ? historyDialogItems.map((item) => (
+                    <button
+                      key={item.id}
+                      className="history-dialog-card"
+                      type="button"
+                      aria-current={selectedHistoryId === item.id ? 'page' : undefined}
+                      onClick={() => {
+                        closeHistoryDialog();
+                        setSelectedHistoryId(item.id);
+                        setHistoryDetail(null);
+                        setHistoryError(null);
+                        setPage('history');
+                        window.requestAnimationFrame(() =>
+                          historyDialogTriggerRef.current?.focus(),
+                        );
+                      }}
+                    >
+                      <strong>{item.sourceText}</strong>
+                      <span>{item.translation}</span>
+                    </button>
+                  ))
+                : null}
+              {historyDialogLoading && <p role="status">{t('common.loading')}</p>}
+              {historyDialogError && <p role="alert">{historyDialogError}</p>}
+              {!historyDialogLoading && !historyDialogError && historyDialogItems.length === 0 && (
+                <p>{t('history.empty')}</p>
+              )}
+              {(historyDialogHasMore || historyDialogError !== null) && (
+                <button
+                  className="history-dialog-more"
+                  type="button"
+                  disabled={historyDialogLoading}
+                  onClick={
+                    historyDialogError === null
+                      ? loadMoreHistory
+                      : () =>
+                          loadHistoryDialogPage(
+                            historyDialogItems.length,
+                            historyDialogRequestIdRef.current,
+                          )
+                  }
+                >
+                  {historyDialogLoading
+                    ? t('common.loading')
+                    : historyDialogError === null
+                      ? t('main.loadMoreHistory')
+                      : t('common.retry')}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
       {imageDragActive && (
         <div className="image-drop-overlay" aria-hidden="true">
           <ImageIcon size={26} />
           <span>{t('main.imageTitle')}</span>
         </div>
       )}
-      <section className="nani-canvas" inert={settingsRendered || onboardingActive}>
+      <section
+        className="nani-canvas"
+        inert={settingsRendered || onboardingActive || historyDialogOpen}
+      >
         {page === 'translate' ? (
           <Composer
             key={composerKey}
@@ -2235,6 +2268,7 @@ export function MainView(): React.JSX.Element {
                 settings={settingsState.settings}
                 translationConfigured={status.translationConfigured}
                 onImageFile={(file) => startImageTranslationRef.current(file)}
+                openSettings={openSettings}
                 openWritingStyles={() => openSettings('writing-styles')}
                 onSubmit={(submission) => {
                   setPendingSubmission((current) => ({

@@ -47,4 +47,5 @@ export interface HistoryDetail {
 export interface HistoryQuery {
   readonly query: string;
   readonly limit: number;
+  readonly offset?: number;
 }

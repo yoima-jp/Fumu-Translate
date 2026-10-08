@@ -103,6 +103,7 @@ const historyQuerySchema = z
   .object({
     query: z.string().max(500),
     limit: z.number().int().min(1).max(200),
+    offset: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).default(0),
   })
   .strict();
 const historyIdSchema = z.uuid();
