@@ -3470,11 +3470,25 @@ button.style-row {
     align-items: center;
     flex-direction: column;
     gap: 8px;
-    /* 本文と同じ背景だと境界が分からないため、通常サイドバーと同じパネル色と区切り線に揃え、
-       薄い影で本文より一段手前にあることを示す。 */
+    background: transparent;
+    border-right: 0;
+  }
+
+  /* 縮小時は全高の帯ではなく、主要操作だけを縦長のカプセルにまとめて浮かせる。
+     背景と同化して範囲が分からなかったため、パネル色・細線・影で輪郭を出す。
+     設定は頻度が低いのでカプセルに含めず、左下に単独で残す。 */
+  .mini-rail-primary {
+    padding: 6px 4px;
     background: var(--nani-panel);
-    border-right: 1px solid var(--nani-line);
-    box-shadow: 2px 0 8px rgb(41 76 31 / 6%);
+    border: 1px solid var(--nani-line);
+    border-radius: 999px;
+    box-shadow: 0 4px 14px rgb(41 76 31 / 10%);
+  }
+
+  /* カプセルの丸い輪郭に合わせ、ホバー時の背景も角丸四角ではなく円にする。 */
+  .mini-rail-primary .mini-rail-button,
+  .mini-rail-primary .mini-rail-language .soft-select-trigger {
+    border-radius: 999px;
   }
 
   .sidebar-resize-handle {
