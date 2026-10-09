@@ -119,7 +119,7 @@ kbd {
 .inline-error {
   max-width: 430px;
   margin: 18px 0 0;
-  color: #9d403a;
+  color: var(--nani-danger);
   font-size: 12px;
   line-height: 1.6;
 }
@@ -153,7 +153,7 @@ kbd {
 
 .text-button.danger,
 .main-error {
-  color: #9b403a;
+  color: var(--nani-danger);
 }
 
 .page-title-row {
@@ -303,36 +303,15 @@ kbd {
   box-shadow: none;
 }
 
-.popup-shell {
-  width: 480px;
-  max-height: 760px;
-  overflow: hidden;
-  color: #292620;
-  background: rgb(255 253 249 / 97%);
-  border: 1px solid rgb(126 113 92 / 25%);
-  border-radius: 18px;
-  box-shadow:
-    0 20px 55px rgb(42 35 26 / 22%),
-    0 2px 12px rgb(42 35 26 / 10%);
-}
-
 .popup-header {
   -webkit-app-region: drag;
   display: flex;
-  height: 46px;
-  padding: 0 13px 0 16px;
   align-items: center;
   justify-content: space-between;
-  color: #5b554b;
-  border-bottom: 1px solid #ede6dc;
 }
 
 .popup-brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
   font-size: 13px;
-  font-weight: 750;
   letter-spacing: -0.025em;
 }
 
@@ -354,43 +333,19 @@ textarea {
   -webkit-app-region: no-drag;
 }
 
-.manual-section,
-.capture-state,
-.error-state {
-  padding: 19px 20px 22px;
-}
-
 .popup-scroll {
-  max-height: 714px;
   overflow-y: auto;
   overscroll-behavior: contain;
 }
 
 .manual-section label {
   margin: 0;
-  color: var(--text-subtle);
-  font-size: 11px;
-  font-weight: 720;
   letter-spacing: 0.07em;
-}
-
-.manual-section {
-  display: flex;
-  flex-direction: column;
 }
 
 .manual-section textarea {
   width: 100%;
-  min-height: 154px;
   margin-top: 11px;
-  padding: 13px 14px;
-  resize: vertical;
-  color: #2f2b25;
-  font-size: 14px;
-  line-height: 1.65;
-  background: #faf6ef;
-  border: 1px solid #ddd5c8;
-  border-radius: 11px;
 }
 
 .manual-section textarea::placeholder {
@@ -411,6 +366,7 @@ textarea {
 
 .error-state p {
   margin: 0 0 16px;
+  color: var(--nani-danger);
   font-size: 14px;
   line-height: 1.6;
 }
@@ -442,12 +398,6 @@ textarea {
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .nani-loading-lines span {
-    animation: none;
-  }
-}
-
 /* 明るいブランド緑と、白文字の可読性を守る濃い操作緑を分離する。
    キャラクターの楽しさを出しつつ、広い面は低彩度にして翻訳結果へ集中させる。 */
 :root {
@@ -456,7 +406,6 @@ textarea {
   --fumu-brand-action: #3b870f;
   --fumu-brand-action-hover: #34790d;
   --fumu-on-brand: #ffffff;
-  --fumu-focus-ring: #3b870f;
   --fumu-disabled: #cad7c4;
   --fumu-disabled-foreground: #5e6959;
   --nani-ink: #1f271b;
@@ -470,6 +419,7 @@ textarea {
   --nani-modal: #f3f8f0;
   --nani-control: #edf4e9;
   --nani-dot: #d4e9c9;
+  --nani-danger: #9b403a;
 }
 
 [data-theme='dark'] {
@@ -480,7 +430,6 @@ textarea {
   --fumu-brand-action: #a9ec31;
   --fumu-brand-action-hover: #c0fb59;
   --fumu-on-brand: #17200d;
-  --fumu-focus-ring: #b8f647;
   --fumu-disabled: #3a403f;
   --fumu-disabled-foreground: #9ba29f;
   --nani-ink: #f3f5f4;
@@ -494,6 +443,7 @@ textarea {
   --nani-modal: #171a1b;
   --nani-control: #252a29;
   --nani-dot: #1f2928;
+  --nani-danger: #ff827a;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -505,7 +455,6 @@ textarea {
     --fumu-brand-action: #a9ec31;
     --fumu-brand-action-hover: #c0fb59;
     --fumu-on-brand: #17200d;
-    --fumu-focus-ring: #b8f647;
     --fumu-disabled: #3a403f;
     --fumu-disabled-foreground: #9ba29f;
     --nani-ink: #f3f5f4;
@@ -519,6 +468,7 @@ textarea {
     --nani-modal: #171a1b;
     --nani-control: #252a29;
     --nani-dot: #1f2928;
+    --nani-danger: #ff827a;
   }
 }
 
@@ -812,7 +762,6 @@ body.sidebar-resizing * {
   display: flex;
   min-height: 0;
   padding: 2px 0;
-  flex: 1;
   flex-direction: column;
   overflow-y: auto;
 }
@@ -876,7 +825,9 @@ body.sidebar-resizing * {
   align-items: center;
 }
 
-.mini-rail-button {
+.mini-rail-button,
+.mini-rail .sidebar-capture,
+.mini-rail .sidebar-settings {
   display: grid;
   width: 40px;
   height: 40px;
@@ -892,7 +843,9 @@ body.sidebar-resizing * {
 }
 
 .mini-rail-button:hover,
-.mini-rail-history[data-open] > .mini-rail-button {
+.mini-rail-history[data-open] > .mini-rail-button,
+.mini-rail .sidebar-capture:hover:not(:disabled),
+.mini-rail .sidebar-settings:hover {
   color: var(--nani-ink);
   background: var(--nani-soft);
 }
@@ -1005,33 +958,6 @@ body.sidebar-resizing * {
   border-radius: 4px;
 }
 
-.mini-rail .sidebar-capture {
-  width: 40px;
-  height: 40px;
-  flex-basis: 40px;
-  color: var(--nani-muted);
-  background: transparent;
-  border-radius: 12px;
-}
-
-.mini-rail .sidebar-capture:hover:not(:disabled) {
-  color: var(--nani-ink);
-  background: var(--nani-soft);
-}
-
-.mini-rail .sidebar-settings {
-  width: 40px;
-  height: 40px;
-  color: var(--nani-muted);
-  background: transparent;
-  border-radius: 12px;
-}
-
-.mini-rail .sidebar-settings:hover {
-  color: var(--nani-ink);
-  background: var(--nani-soft);
-}
-
 .mini-rail-history-popover {
   position: absolute;
   z-index: 40;
@@ -1116,6 +1042,10 @@ body.sidebar-resizing * {
   color: var(--nani-muted);
   font-size: 13px;
   text-align: center;
+}
+
+.history-dialog-list > p[role='alert'] {
+  color: var(--nani-danger);
 }
 
 .history-dialog-card {
@@ -1252,6 +1182,11 @@ body.sidebar-resizing * {
 
 .translate-workspace.composer-workspace {
   width: min(600px, calc(100% - 34px));
+}
+
+.history-result-error {
+  width: min(920px, calc(100% - 56px));
+  margin: 42px auto;
 }
 
 .nani-result-actions {
@@ -1608,7 +1543,7 @@ body.sidebar-resizing * {
   width: 14px;
   height: 14px;
   content: '';
-  background: #fff;
+  background: var(--nani-panel);
   border-radius: 50%;
   transition: transform 140ms ease;
 }
@@ -1619,10 +1554,6 @@ body.sidebar-resizing * {
 
 .composer-style-toggle.active .toggle-dot::after {
   transform: translateX(14px);
-}
-
-.composer-style-toggle:focus-visible .toggle-dot {
-  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
 .composer-language {
@@ -1676,7 +1607,8 @@ body.sidebar-resizing * {
 }
 
 .inline-context-editor:focus-visible {
-  outline: 0;
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
 }
 
 .inline-context-chip {
@@ -1916,10 +1848,6 @@ body.sidebar-resizing * {
   resize: none;
 }
 
-.composer-additional-instruction textarea:focus-visible {
-  outline: 0;
-}
-
 .composer-additional-actions {
   display: flex;
   justify-content: flex-end;
@@ -1954,7 +1882,7 @@ body.sidebar-resizing * {
 
 .composer-additional-instruction > p {
   margin: 6px 0 0;
-  color: var(--fumu-danger, #b24832);
+  color: var(--nani-danger);
   font-size: 11px;
 }
 
@@ -1996,13 +1924,14 @@ body.sidebar-resizing * {
 .speech-voice-notice > svg {
   margin-top: 2px;
   color: #fff;
-  fill: var(--fumu-danger, #ef5d57);
+  fill: var(--nani-danger);
   filter: drop-shadow(0 1px 2px rgb(140 44 40 / 16%));
 }
 
 .speech-voice-notice p {
   margin: 0;
   overflow-wrap: anywhere;
+  color: var(--nani-danger);
   font-size: 13px;
   line-height: 1.5;
 }
@@ -2151,27 +2080,12 @@ body.sidebar-resizing * {
   .another-text-style-popover,
   .another-text-style-popover.closing,
   .history-dialog,
-  .settings-overlay,
-  .settings-overlay.closing,
-  .settings-modal,
-  .settings-overlay.closing .settings-modal,
-  .settings-subview,
-  .settings-subview-closing,
-  .adjustment-menu,
-  .adjustment-menu-closing,
   .composer-style-reveal,
   .composer-style-reveal.closing,
   .composer-style-picker,
   .composer-style-picker.closing,
-  .soft-select-menu,
-  .speech-voice-notice,
-  .conversation-reply-composer,
-  .conversation-turn-loading span {
+  .speech-voice-notice {
     animation: none;
-  }
-
-  .conversation-tabs::before {
-    transition: none;
   }
 
   .another-text-bar,
@@ -2286,7 +2200,7 @@ body.sidebar-resizing * {
 
 .quick-settings-error {
   margin: 10px 2px 0;
-  color: var(--fumu-danger, #b24832);
+  color: var(--nani-danger);
   font-size: 11px;
 }
 
@@ -2537,7 +2451,6 @@ body.sidebar-resizing * {
   line-height: 1.6;
   background: transparent;
   border: 0;
-  outline: 0;
   resize: none;
 }
 
@@ -2827,7 +2740,6 @@ body.sidebar-resizing * {
 .result-actions {
   display: flex;
   margin-left: auto;
-  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 6px;
 }
@@ -2880,7 +2792,7 @@ body.sidebar-resizing * {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  color: #ad514b;
+  color: var(--nani-danger);
   font-size: 12px;
 }
 
@@ -3385,7 +3297,7 @@ button.style-row {
   background: var(--nani-control);
 }
 .style-context-menu button.danger {
-  color: var(--nani-danger, #c45454);
+  color: var(--nani-danger);
 }
 .style-editor {
   display: grid;
@@ -3441,6 +3353,7 @@ button.style-row {
 }
 
 @media (max-width: 840px) {
+  /* 横長の720〜840pxでは本文の余白を確保し、下の縮小表示条件では本文幅を優先する。 */
   .translate-workspace {
     width: calc(100% - 34px);
   }
@@ -3550,11 +3463,6 @@ button.style-row {
 
 .history-result-workspace .nani-result-flow {
   margin-top: 0;
-}
-
-.history-result-error {
-  width: min(920px, calc(100% - 56px));
-  margin: 42px auto;
 }
 
 .popup-shell {
@@ -3746,6 +3654,10 @@ button.style-row {
   color: var(--nani-muted);
 }
 
+.settings-modal .field-message[role='alert'] {
+  color: var(--nani-danger);
+}
+
 .image-stage-error .nani-error {
   margin-top: 0;
 }
@@ -3775,7 +3687,7 @@ button.style-row {
 }
 
 .settings-modal .text-button.danger {
-  color: #d56861;
+  color: var(--nani-danger);
 }
 
 .settings-modal input[type='checkbox'] {
@@ -4030,7 +3942,7 @@ button.provider-choice-row {
   color: var(--nani-muted);
 }
 .used-model-actions > button:hover:not(:disabled) {
-  background: rgb(0 0 0 / 6%);
+  background: var(--nani-soft);
 }
 .used-model-actions > button:disabled {
   opacity: 0.32;
@@ -4193,7 +4105,6 @@ button.provider-choice-row {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  border: 0;
   border: 1px solid var(--nani-line);
   border-radius: 999px;
   padding: 0 14px;
@@ -4630,7 +4541,7 @@ button.provider-choice-row {
 
 .back-translation-verdict svg {
   padding: 3px;
-  color: #fff;
+  color: var(--fumu-on-brand);
   background: var(--fumu-brand-action);
   border-radius: 50%;
 }
@@ -5161,7 +5072,6 @@ button.provider-choice-row {
   color: var(--nani-ink);
   background: transparent;
   border: 0;
-  outline: 0;
 }
 
 .onboarding-language-options {
@@ -5807,7 +5717,7 @@ button.provider-choice-row {
 .onboarding-error {
   max-width: 340px;
   margin: 14px 0 0;
-  color: #a13d36;
+  color: var(--nani-danger);
   font-size: 12px;
   line-height: 1.5;
 }
@@ -6010,5 +5920,27 @@ button.provider-choice-row {
   .onboarding-mascot-frame.is-landing {
     animation: none;
     transition-duration: 1ms;
+  }
+}
+
+/* OSの動き軽減設定は、各コンポーネントの後続アニメーション定義より優先する。 */
+@media (prefers-reduced-motion: reduce) {
+  .nani-loading-lines span,
+  .conversation-turn-loading span,
+  .conversation-reply-composer,
+  .settings-overlay,
+  .settings-overlay.closing,
+  .settings-modal,
+  .settings-overlay.closing .settings-modal,
+  .settings-subview,
+  .settings-subview-closing,
+  .soft-select-menu,
+  .adjustment-menu,
+  .adjustment-menu-closing {
+    animation: none;
+  }
+
+  .conversation-tabs::before {
+    transition: none;
   }
 }
