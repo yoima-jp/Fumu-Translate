@@ -1213,7 +1213,7 @@ export function SettingsView({
               aria-label={t('common.close')}
               onClick={close}
             >
-              <X size={21} />
+              <X size={20} />
             </button>
           )}
         </header>

@@ -232,7 +232,7 @@ function PresetPicker({
                     {preset.hintKey && <small>{t(preset.hintKey)}</small>}
                     {count > 0 && <small>{t('common.itemCount', { count })}</small>}
                   </span>
-                  <ChevronRight size={18} aria-hidden="true" />
+                  <ChevronRight size={17} aria-hidden="true" />
                 </button>
               );
             })}

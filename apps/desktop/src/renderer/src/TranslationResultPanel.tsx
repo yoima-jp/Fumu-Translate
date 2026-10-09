@@ -750,7 +750,7 @@ function SourceText({
           aria-expanded={expanded}
           onClick={() => setExpanded((value) => !value)}
         >
-          <ChevronsUpDown size={17} />
+          <ChevronsUpDown size={18} />
         </button>
       )}
     </div>
@@ -995,7 +995,7 @@ export function TranslationResultPanel({
               disabled={pending}
               onClick={() => setSourceDraft(sourceText)}
             >
-              <PenLine size={17} />
+              <PenLine size={18} />
             </button>
           )}
           <CopyAction text={sourceText} />
