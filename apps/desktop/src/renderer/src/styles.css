@@ -1261,7 +1261,15 @@ body.sidebar-resizing * {
   display: grid;
   padding: 8px 0;
   gap: 8px;
-  background: var(--nani-canvas);
+  /* スクロール中に追従して見えるのは白い楕円のバーだけにしたい。
+     ラッパーに背景を付けると四角い帯ごと動いて見えるため透明にし、
+     上下の余白部分は下のカードへのクリックを妨げないよう pointer-events を通す。 */
+  background: transparent;
+  pointer-events: none;
+}
+
+.nani-result-actions > * {
+  pointer-events: auto;
 }
 
 .nani-composer-shell {
