@@ -1478,12 +1478,11 @@ body.sidebar-resizing * {
 }
 
 .another-text-style-options > button.another-text-style-add {
-  min-height: 31px;
-  width: 31px;
+  /* 並ぶ文体チップと同じ 32px にして、行の高さと円の大きさを揃える。 */
+  width: 32px;
   padding: 0;
   justify-content: center;
   color: var(--nani-muted);
-  font-size: 11px;
   background: var(--nani-soft);
 }
 
