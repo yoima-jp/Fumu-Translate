@@ -3449,8 +3449,9 @@ button.style-row {
   }
 }
 
-@media (max-width: 719px) {
-  /* 720px未満では本文幅を優先してレールへ切り替える。オンボーディングは既存の構成を保つ。 */
+@media (max-width: 899px) {
+  /* サイドバーは 276px あり、720px 付近まで残すと本文が 450px 程度まで細り翻訳結果が読みにくい。
+     900px 未満で早めにレールへ切り替えて本文幅を優先する。オンボーディングは既存の構成を保つ。 */
   .nani-main-window {
     grid-template-columns: 56px minmax(0, 1fr);
   }
@@ -3469,8 +3470,11 @@ button.style-row {
     align-items: center;
     flex-direction: column;
     gap: 8px;
-    background: transparent;
-    border-right: 0;
+    /* 本文と同じ背景だと境界が分からないため、通常サイドバーと同じパネル色と区切り線に揃え、
+       薄い影で本文より一段手前にあることを示す。 */
+    background: var(--nani-panel);
+    border-right: 1px solid var(--nani-line);
+    box-shadow: 2px 0 8px rgb(41 76 31 / 6%);
   }
 
   .sidebar-resize-handle {
