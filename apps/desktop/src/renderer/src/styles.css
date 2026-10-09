@@ -1,6 +1,8 @@
 :root {
   --text-subtle: #81909a;
   --focus-ring: #3b870f;
+  /* 大型の浮動パネルはダークテーマでも沈みすぎない黒系の影を共有する。 */
+  --nani-panel-shadow: 0 18px 48px rgb(0 0 0 / 25%);
   color: #27241f;
   background: transparent;
   font-family: Inter, 'Segoe UI Variable Text', 'Yu Gothic UI', 'Noto Sans JP', sans-serif;
@@ -1144,7 +1146,6 @@ body.sidebar-resizing * {
 }
 
 .mini-rail-history-items button:hover,
-.mini-rail-history-items button.selected,
 .mini-rail-show-all:hover {
   background: var(--nani-soft);
 }
@@ -1445,16 +1446,17 @@ body.sidebar-resizing * {
   gap: 6px;
 }
 
-.another-text-style-options > button {
+.another-text-style-options > button,
+.composer-style-picker > button {
   display: inline-flex;
-  min-height: 31px;
+  min-height: 32px;
   max-width: 100%;
-  padding: 0 10px;
+  padding: 0 11px;
   align-items: center;
   gap: 5px;
   overflow: hidden;
   color: var(--nani-ink);
-  font-size: 11px;
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
   background: var(--nani-soft);
@@ -1463,21 +1465,25 @@ body.sidebar-resizing * {
   cursor: pointer;
 }
 
-.another-text-style-options > button:hover {
+.another-text-style-options > button:hover,
+.composer-style-picker > button:hover {
   background: var(--nani-control);
 }
 
-.another-text-style-options > button.selected {
+.another-text-style-options > button.selected,
+.composer-style-picker > button.selected {
   color: var(--fumu-accent);
   background: var(--nani-note);
   border-color: var(--fumu-accent);
 }
 
 .another-text-style-options > button.another-text-style-add {
+  min-height: 31px;
   width: 31px;
   padding: 0;
   justify-content: center;
   color: var(--nani-muted);
+  font-size: 11px;
   background: var(--nani-soft);
 }
 
@@ -1533,9 +1539,12 @@ body.sidebar-resizing * {
   width: 34px;
   height: 20px;
   padding: 3px;
-  background: var(--nani-line);
+  background: var(--nani-control);
   border-radius: 999px;
-  transition: background-color 140ms ease;
+  box-shadow: inset 0 0 0 1px var(--nani-line);
+  transition:
+    background-color 140ms ease,
+    box-shadow 140ms ease;
 }
 
 .toggle-dot::after {
@@ -1550,6 +1559,7 @@ body.sidebar-resizing * {
 
 .composer-style-toggle.active .toggle-dot {
   background: var(--fumu-brand-action);
+  box-shadow: none;
 }
 
 .composer-style-toggle.active .toggle-dot::after {
@@ -1736,34 +1746,6 @@ body.sidebar-resizing * {
   opacity: 0;
   transform: translateY(-5px) scale(0.96);
   animation: composer-style-picker-out 210ms cubic-bezier(0.4, 0, 0.8, 0.2) both;
-}
-
-.composer-style-picker > button {
-  display: inline-flex;
-  min-height: 32px;
-  max-width: 100%;
-  padding: 0 11px;
-  align-items: center;
-  gap: 5px;
-  overflow: hidden;
-  color: var(--nani-ink);
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  background: var(--nani-soft);
-  border: 1px solid transparent;
-  border-radius: 999px;
-  cursor: pointer;
-}
-
-.composer-style-picker > button:hover {
-  background: var(--nani-control);
-}
-
-.composer-style-picker > button.selected {
-  color: var(--fumu-accent);
-  background: var(--nani-note);
-  border-color: var(--fumu-accent);
 }
 
 .composer-style-picker > button.additional {
@@ -2039,7 +2021,7 @@ body.sidebar-resizing * {
   background: var(--nani-modal);
   border: 1px solid var(--nani-line);
   border-radius: 24px;
-  box-shadow: 0 18px 46px rgb(0 0 0 / 28%);
+  box-shadow: var(--nani-panel-shadow);
   backdrop-filter: blur(18px);
   transform-origin: bottom left;
   animation: quick-settings-in 160ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
@@ -3456,7 +3438,8 @@ button.style-row {
 
 /* メイン・履歴・ショートカットPopupは同じ結果コンポーネントを使うため、
    表示面ごとの差は余白と横幅だけに限定する。 */
-.history-nav button.selected {
+.history-nav button.selected,
+.mini-rail-history-items button.selected {
   font-weight: 680;
   background: var(--nani-soft);
 }
@@ -4384,7 +4367,7 @@ button.provider-choice-row {
   background: var(--nani-panel);
   border: 1px solid var(--nani-line);
   border-radius: 24px;
-  box-shadow: 0 18px 48px rgb(26 57 20 / 22%);
+  box-shadow: var(--nani-panel-shadow);
   max-height: min(520px, calc(100vh - 24px));
   overflow-y: auto;
   transform-origin: bottom right;
