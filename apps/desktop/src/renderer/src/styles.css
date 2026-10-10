@@ -46,6 +46,20 @@ select:focus-visible {
   outline-offset: 2px;
 }
 
+/*
+ * 枠も背景も持たない「カードの中に溶け込んだ入力欄」には輪郭を出さない。
+ * 文字入力欄はマウスでクリックしただけでも :focus-visible になるため、
+ * 上の共通ルールのままだと入力のたびにカードの内側へ四角い緑の枠が出てしまう。
+ * フォーカス位置はキャレットで分かるので、ここでは輪郭を消してよい。
+ * 自前の枠を持つ入力欄（設定のテキスト欄など）はこの一覧に足さないこと。
+ */
+.inline-context-editor:focus-visible,
+.composer-additional-instruction textarea:focus-visible,
+.conversation-reply-composer textarea:focus-visible,
+.onboarding-language-search input:focus-visible {
+  outline: 0;
+}
+
 .main-window {
   display: grid;
   grid-template-columns: 68px 1fr;
@@ -1613,11 +1627,6 @@ body.sidebar-resizing * {
 
 .inline-context-editor.is-empty[data-editor-has-content='true']::before {
   content: none;
-}
-
-.inline-context-editor:focus-visible {
-  outline: 3px solid var(--focus-ring);
-  outline-offset: 2px;
 }
 
 .inline-context-chip {
