@@ -4,7 +4,7 @@ import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { downloadInstaller, installationScript } from './install-update';
+import { downloadInstaller, installationScript, startPowerShellHelper } from './install-update';
 
 const folders: string[] = [];
 afterEach(async () => {
@@ -36,7 +36,9 @@ describe('installer download', () => {
       if ($ArgumentList -join ',' -ne '/S,--updated,--force-run') { throw 'Incorrect arguments' }
       if ($WindowStyle -ne 'Hidden') { throw 'Visible helper' }
       Write-Host 'INSTALLER_STARTED'
-      return [pscustomobject]@{ ExitCode = 0 }
+      $installer = [pscustomobject]@{ ExitCode = 0; Handle = 1 }
+      $installer | Add-Member -MemberType ScriptMethod -Name WaitForExit -Value {}
+      return $installer
     }\n`;
       const script =
         mock + installationScript(join(folder, 'setup.exe'), 2147483647, join(folder, 'app.exe'));
@@ -52,7 +54,6 @@ describe('installer download', () => {
       );
       expect(result.error).toBeUndefined();
       expect(result.status, result.stderr).toBe(0);
-      expect(result.stdout).toContain('FUMU_UPDATE_READY');
       expect(result.stdout).toContain('INSTALLER_STARTED');
       expect(await readdir(folder)).toEqual([]);
     },
@@ -109,4 +110,23 @@ describe('installer download', () => {
     expect(script).toContain("'--updated', '--force-run'");
     expect(script).toContain('-WindowStyle Hidden');
   });
+  it.skipIf(process.platform !== 'win32')(
+    'runs the helper script outside the app process and signals readiness',
+    async () => {
+      // detached 起動だと Windows PowerShell 5.1 がスクリプトを実行しない不具合の回帰確認。
+      const folder = await directory();
+      const marker = join(folder, 'ready');
+      const output = join(folder, 'output.txt');
+      await startPowerShellHelper(
+        `[System.IO.File]::WriteAllText('${marker}', '')
+Set-Content -LiteralPath '${output}' -Value 'ran' -Encoding utf8`,
+        marker,
+        process.env,
+      );
+      await expect
+        .poll(() => readFile(output, 'utf8').catch(() => ''), { timeout: 10_000 })
+        .toContain('ran');
+    },
+    40_000,
+  );
 });
